@@ -1,0 +1,13 @@
+name: Test Push to iPhone
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send ntfy test message
+        run: |
+          curl -d "🚀 Test Push: RNV Monitor funktioniert!" https://ntfy.sh/DEIN_TOPIC_NAME
