@@ -11,6 +11,6 @@ jobs:
       - name: Send test notification
         run: |
           curl -H "Title: Perdis" \
-               -H "Icon: https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios80x80.png" \
+               -H "Icon: https://httpbin.org/image/png" \
                -d "Test Push funktioniert 🚀" \
                https://ntfy.sh/mein-rnv-monitor
