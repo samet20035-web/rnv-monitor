@@ -1,188 +1,196 @@
 import os
-import re
-import json
-import hashlib
 import requests
 from bs4 import BeautifulSoup
+import hashlib
+import json
 
-# =========================================================
-# CONFIG
-# =========================================================
-
-LOGIN_URL = os.getenv("RNV_LOGIN_URL")
-ROSTER_URL = os.getenv("RNV_ROSTER_URL")
+BASE_URL = "https://DEINE-RNV-SEITE/roster.aspx"
+LOGIN_URL = "https://DEINE-RNV-SEITE/default.aspx"
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "rnv-dienstplan")
 
 USERNAME = os.getenv("RNV_USER")
 PASSWORD = os.getenv("RNV_PASS")
 
-NTFY_TOPIC = os.getenv("NTFY_TOPIC")
-NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
 
-STATE_FILE = "state/roster.json"
-
-session = requests.Session()
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124 Safari/537.36"
-}
-
-# =========================================================
-# HELPERS
-# =========================================================
-
-def send_ntfy(msg: str):
-    requests.post(
-        NTFY_URL,
-        data=msg.encode("utf-8"),
-        headers={"Title": "RNV Dienstplan"},
-        timeout=20
-    )
+# -----------------------------
+# UTIL: Hash für Change Detection
+# -----------------------------
+def make_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def load_state():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+# -----------------------------
+# LOGIN (ASP.NET robust)
+# -----------------------------
+def login(session: requests.Session):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+        "Origin": "https://DEINE-RNV-SEITE",
+        "Referer": LOGIN_URL,
+    }
 
+    # 1. GET Loginseite (VIEWSTATE holen)
+    r = session.get(LOGIN_URL, headers=headers)
+    soup = BeautifulSoup(r.text, "html.parser")
 
-def save_state(data):
-    os.makedirs("state", exist_ok=True)
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-# =========================================================
-# LOGIN
-# =========================================================
-
-def login():
-    page = session.get(LOGIN_URL, headers=HEADERS)
-    soup = BeautifulSoup(page.text, "html.parser")
-
-    def get_hidden(name):
+    def get_value(name):
         tag = soup.find("input", {"name": name})
         return tag["value"] if tag else ""
 
     payload = {
-        "__VIEWSTATE": get_hidden("__VIEWSTATE"),
-        "__VIEWSTATEGENERATOR": get_hidden("__VIEWSTATEGENERATOR"),
-        "__EVENTVALIDATION": get_hidden("__EVENTVALIDATION"),
-
-        "txtUsername": USERNAME,
-        "txtPassword": PASSWORD,
-        "btnLogin": "Login"
+        "__VIEWSTATE": get_value("__VIEWSTATE"),
+        "__VIEWSTATEGENERATOR": get_value("__VIEWSTATEGENERATOR"),
+        "__EVENTVALIDATION": get_value("__EVENTVALIDATION"),
+        "ctl00$txtUsername": USERNAME,
+        "ctl00$txtPassword": PASSWORD,
+        "ctl00$btnLogin": "Login",
     }
 
-    r = session.post(LOGIN_URL, data=payload, headers=HEADERS)
-    return r.text
+    r2 = session.post(LOGIN_URL, data=payload, headers=headers)
+
+    if "logout" not in r2.text.lower() and "abmelden" not in r2.text.lower():
+        raise Exception("Login fehlgeschlagen – bitte Credentials prüfen")
+
+    return session
 
 
-# =========================================================
-# PARSER (DIE WICHTIGE LOGIK)
-# =========================================================
-
-def parse_services(html):
+# -----------------------------
+# HTML PARSER (Dienstplan)
+# -----------------------------
+def parse_services(html: str):
     soup = BeautifulSoup(html, "html.parser")
 
     table = soup.find("table", {"id": "ctl00_ctl00_cntMainBody_calRoster"})
     if not table:
-        raise Exception("Dienstplan-Tabelle nicht gefunden")
+        raise Exception("Dienstplan-Tabelle nicht gefunden (evtl. nicht eingeloggt)")
 
-    services = {}
+    services = []
 
-    for cell in table.find_all("td"):
-        href = cell.get("href") or ""
-        match_date = re.search(r"(\d{4}-\d{2}-\d{2})", href)
-
-        tooltip = cell.get("title", "")
-
-        if not match_date:
+    for td in table.find_all("td"):
+        title = td.get("title", "")
+        if "Dienst:" not in title:
             continue
 
-        date = match_date.group(1)
+        strong = td.find("strong")
+        span = td.find("span")
 
-        # ERSA / frei
-        if "ERSA" in cell.text or "abwesend" in tooltip.lower():
-            continue
+        day = strong.get_text(strip=True) if strong else ""
+        time = span.get_text(strip=True) if span else ""
 
-        # Dienst erkennen
-        dienst_match = re.search(r"(\d{6,})", tooltip)
-        time_match = re.search(r"(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})", tooltip)
+        # Dienstnummer extrahieren
+        dienst_id = ""
+        if "Dienst:" in title:
+            try:
+                dienst_id = title.split("Dienst:")[1].split("•")[0].strip()
+            except:
+                pass
 
-        if time_match:
-            services[date] = {
-                "dienst": dienst_match.group(1) if dienst_match else "UNKNOWN",
-                "start": time_match.group(1),
-                "end": time_match.group(2)
-            }
+        services.append({
+            "day": day,
+            "time": time,
+            "id": dienst_id,
+            "raw": title
+        })
 
     return services
 
 
-# =========================================================
+# -----------------------------
 # DIFF LOGIK
-# =========================================================
-
-def compare(old, new):
-    old_keys = set(old.keys())
-    new_keys = set(new.keys())
-
-    added = new_keys - old_keys
-    removed = old_keys - new_keys
-    common = old_keys & new_keys
+# -----------------------------
+def diff(old, new):
+    old_map = {x["id"] + x["day"]: x for x in old}
+    new_map = {x["id"] + x["day"]: x for x in new}
 
     changes = []
 
-    # NEU
-    for d in added:
-        s = new[d]
-        changes.append(
-            f"Neuer Dienst am {d}\n{s['start']} - {s['end']}\nDienst: {s['dienst']}"
-        )
+    # neue + geänderte
+    for k, v in new_map.items():
+        if k not in old_map:
+            changes.append(("NEW", v))
+        elif old_map[k]["time"] != v["time"]:
+            changes.append(("CHANGED", old_map[k], v))
 
-    # GELÖSCHT
-    for d in removed:
-        s = old[d]
-        changes.append(
-            f"Dienst entfernt am {d}\n{s['start']} - {s['end']}"
-        )
-
-    # GEÄNDERT
-    for d in common:
-        if old[d] != new[d]:
-            changes.append(
-                f"Dienst geändert am {d}\n"
-                f"Alt: {old[d]['start']} - {old[d]['end']}\n"
-                f"Neu: {new[d]['start']} - {new[d]['end']}"
-            )
+    # entfernte
+    for k, v in old_map.items():
+        if k not in new_map:
+            changes.append(("REMOVED", v))
 
     return changes
 
 
-# =========================================================
+# -----------------------------
+# FORMAT PUSH MESSAGE
+# -----------------------------
+def format_message(change):
+    if change[0] == "NEW":
+        d = change[1]
+        return f"Neuer Dienst am {d['day']}\n{d['time']}\nDienst: {d['id']}"
+
+    if change[0] == "CHANGED":
+        old, new = change[1], change[2]
+        return (
+            f"Dienst geändert am {new['day']}\n"
+            f"Alt: {old['time']}\n"
+            f"Neu: {new['time']}\n"
+            f"Dienst: {new['id']}"
+        )
+
+    if change[0] == "REMOVED":
+        d = change[1]
+        return f"Dienst entfernt am {d['day']}\n{d['time']}\nDienst: {d['id']}"
+
+
+# -----------------------------
+# PUSH NOTIFICATION
+# -----------------------------
+def notify(message):
+    url = f"https://ntfy.sh/{NTFY_TOPIC}"
+    requests.post(url, data=message.encode("utf-8"))
+
+
+# -----------------------------
 # MAIN
-# =========================================================
-
+# -----------------------------
 def main():
+    session = requests.Session()
 
-    login()
+    try:
+        login(session)
 
-    html = session.get(ROSTER_URL, headers=HEADERS).text
+        r = session.get(BASE_URL)
 
-    new_state = parse_services(html)
-    old_state = load_state()
+        html = r.text
 
-    changes = compare(old_state, new_state)
+        # DEBUG falls wieder Fehler
+        if "Dienstplan" not in html and "calRoster" not in html:
+            with open("debug.html", "w", encoding="utf-8") as f:
+                f.write(html)
+            raise Exception("Keine gültige Dienstplan-Seite geladen")
+
+        current = parse_services(html)
+
+    except Exception as e:
+        print("ERROR:", str(e))
+        return
+
+    # checkpoint aus GitHub Actions / Pipedream
+    old = []
+    if os.path.exists("checkpoint.json"):
+        with open("checkpoint.json", "r") as f:
+            old = json.load(f)
+
+    changes = diff(old, current)
 
     if changes:
-        for msg in changes:
-            send_ntfy(msg)
-            print("SENT:", msg)
-    else:
-        print("Keine Änderungen")
+        for c in changes:
+            msg = format_message(c)
+            print(msg)
+            notify(msg)
 
-    save_state(new_state)
+    # speichern
+    with open("checkpoint.json", "w") as f:
+        json.dump(current, f, indent=2)
 
 
 if __name__ == "__main__":
