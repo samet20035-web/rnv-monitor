@@ -14,6 +14,6 @@ jobs:
             -H "Title: Perdis" \
             -H "X-Icon: https://httpbin.org/image/png" \
             -H "X-Tags: test,github" \
-            -H "Priority: default" \
+            -H "Priority: 5"
             --data "Test Push funktioniert 🚀 (GitHub Actions)" \
             https://ntfy.sh/mein-rnv-monitor
