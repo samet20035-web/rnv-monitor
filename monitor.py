@@ -155,7 +155,17 @@ def notify(message):
         "Tags": "train,calendar"
     }
 
-    requests.post(url, data=message.encode("utf-8"), headers=headers)
+    # WICHTIG: verhindert “statische Wiederverwendung”
+    params = {
+        "t": str(__import__("time").time())  # Cache-Buster
+    }
+
+    requests.post(
+        url,
+        data=message.encode("utf-8"),
+        headers=headers,
+        params=params
+    )
 
 
 # -----------------------------
