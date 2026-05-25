@@ -155,16 +155,13 @@ def notify(message):
         "Tags": "train,calendar"
     }
 
-    # WICHTIG: verhindert “statische Wiederverwendung”
-    params = {
-        "t": str(__import__("time").time())  # Cache-Buster
-    }
+    # verhindert iOS/ntfy "Zusammenklappen" von Notifications
+    unique_id = str(int(time.time() * 1000))
 
     requests.post(
         url,
-        data=message.encode("utf-8"),
-        headers=headers,
-        params=params
+        data=f"{message}\nID: {unique_id}".encode("utf-8"),
+        headers=headers
     )
 
 
