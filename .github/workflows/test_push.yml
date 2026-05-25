@@ -1,13 +1,13 @@
-name: Test Push to iPhone
+name: Test ntfy Push
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  notify:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send ntfy test message
+      - name: Send test push
         run: |
-          curl -d "🚀 Test Push: RNV Monitor funktioniert!" https://ntfy.sh/DEIN_TOPIC_NAME
+          curl -d "🚀 GitHub Test Push funktioniert!" ${{ secrets.NTFY_URL }}
