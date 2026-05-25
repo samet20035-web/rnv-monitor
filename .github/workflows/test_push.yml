@@ -1,13 +1,42 @@
-name: Test ntfy Push
+name: Test Push (ntfy)
 
 on:
   workflow_dispatch:
 
 jobs:
-  notify:
+  test-push:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send test push
+      - name: Send test notification
         run: |
-          curl -d "🚀 GitHub Test Push funktioniert!" ${{ secrets.NTFY_URL }}
+          python - << 'EOF'
+import os
+import time
+import requests
+
+NTFY_TOPIC = os.getenv("NTFY_TOPIC")
+ICON_URL = "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios80x80.png"
+
+def notify(message):
+    url = f"https://ntfy.sh/{NTFY_TOPIC}"
+
+    headers = {
+        "Title": "Perdis",
+        "Icon": ICON_URL,
+        "Priority": "high",
+        "Tags": "train,calendar"
+    }
+
+    unique_id = str(int(time.time() * 1000))
+
+    requests.post(
+        url,
+        data=f"{message}\nID: {unique_id}".encode("utf-8"),
+        headers=headers
+    )
+
+notify("TEST PUSH 🚆 13:00 - 21:00 Dienst: 999999")
+EOF
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
