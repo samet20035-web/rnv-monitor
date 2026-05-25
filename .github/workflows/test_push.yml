@@ -12,8 +12,8 @@ jobs:
         run: |
           curl -X POST \
             -H "Title: Perdis" \
-            -H "X-Icon: https://httpbin.org/image/png" \
+            -H "X-Icon: https://ntfy.sh/static/img/favicon.png" \
             -H "X-Tags: test,github" \
-            -H "Priority: 5"
+            -H "Priority: 5" \
             --data "Test Push funktioniert 🚀 (GitHub Actions)" \
             https://ntfy.sh/mein-rnv-monitor
