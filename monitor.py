@@ -223,7 +223,7 @@ def main() -> int:
         changed = bool(old_hash) and old_hash != current_hash
 
         if changed:
-            send_ntfy("TEST BENACHRICHTIGUNG")
+            send_ntfy("RNV Dienstplan wurde aktualisiert")
             print("[OK] Änderung erkannt, ntfy-Benachrichtigung gesendet.")
         elif not old_hash:
             print("[OK] Erster Lauf: Baseline gespeichert, keine Benachrichtigung.")
