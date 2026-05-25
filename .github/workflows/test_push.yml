@@ -10,7 +10,10 @@ jobs:
     steps:
       - name: Send test notification
         run: |
-          curl -H "Title: Perdis" \
-               -H "X-Icon: https://httpbin.org/image/png" \
-               -d "Test Push funktioniert 🚀" \
-               https://ntfy.sh/mein-rnv-monitor
+          curl -X POST \
+            -H "Title: Perdis" \
+            -H "X-Icon: https://httpbin.org/image/png" \
+            -H "X-Tags: test,github" \
+            -H "Priority: default" \
+            --data "Test Push funktioniert 🚀 (GitHub Actions)" \
+            https://ntfy.sh/mein-rnv-monitor
