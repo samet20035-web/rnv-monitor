@@ -177,6 +177,16 @@ def main():
         r = session.get(BASE_URL)
 
         html = r.text
+        
+print("=== DEBUG START ===")
+print("HTML Länge:", len(html))
+
+# Speichern der echten Seite zum Prüfen
+with open("debug_roster.html", "w", encoding="utf-8") as f:
+    f.write(html)
+
+print("HTML gespeichert in debug_roster.html")
+print("=== DEBUG ENDE ===")
 
         # DEBUG falls wieder Fehler
         if "Dienstplan" not in html and "calRoster" not in html:
