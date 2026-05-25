@@ -7,6 +7,7 @@ import json
 BASE_URL = "https://DEINE-RNV-SEITE/roster.aspx"
 LOGIN_URL = "https://DEINE-RNV-SEITE/default.aspx"
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "rnv-dienstplan")
+ICON_URL = "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios80x80.png"
 
 USERNAME = os.getenv("RNV_USER")
 PASSWORD = os.getenv("RNV_PASS")
@@ -146,7 +147,15 @@ def format_message(change):
 # -----------------------------
 def notify(message):
     url = f"https://ntfy.sh/{NTFY_TOPIC}"
-    requests.post(url, data=message.encode("utf-8"))
+
+    headers = {
+        "Title": "Perdis",
+        "Icon": ICON_URL,
+        "Priority": "high",
+        "Tags": "train,calendar"
+    }
+
+    requests.post(url, data=message.encode("utf-8"), headers=headers)
 
 
 # -----------------------------
