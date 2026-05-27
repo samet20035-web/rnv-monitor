@@ -33,14 +33,10 @@ jobs:
         run: |
           python monitor.py
 
-      - name: Commit changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -f "checkpoint.json" ]; then
-            git add checkpoint.json
-            if ! git diff --quiet --cached; then
-              git commit -m "Update RNV Dienstplan"
-              git push
-            fi
-          fi
+- name: Commit changes
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add checkpoint.json
+        git commit -m "Update checkpoint" || echo "Keine Änderungen"
+        git push
