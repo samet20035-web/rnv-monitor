@@ -48,17 +48,31 @@ def login(session: requests.Session):
         raise Exception("Login fehlgeschlagen.")
 
 def create_calendar_link(service, details, date_str=None):
-    s, e = service['time'].split("-")
-    s_zeit = s.strip().replace(":", "") + "00"
-    e_zeit = e.strip().replace(":", "") + "00"
-    date_compact = date_str.replace("-", "")
-    params = {
-        "text": f"Dienst {service['id']}",
-        "dates": f"{date_compact}T{s_zeit}/{date_compact}T{e_zeit}",
-        "details": details,
-        "location": "RNV"
-    }
-    return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
+    try:
+        time_str = service['time'].strip()
+        # Ersetze evtl. andere Trennzeichen durch Bindestrich
+        time_str = time_str.replace("–", "-").replace("—", "-")
+        parts = time_str.split("-")
+        if len(parts) != 2:
+            return "https://google.com"
+        s, e = parts[0], parts[1]
+        
+        s_zeit = s.strip().replace(":", "") + "00"
+        e_zeit = e.strip().replace(":", "") + "00"
+        
+        if date_str is None:
+            date_str = "2026-05-29"
+        
+        date_compact = date_str.replace("-", "")
+        params = {
+            "text": f"Dienst {service['id']}",
+            "dates": f"{date_compact}T{s_zeit}/{date_compact}T{e_zeit}",
+            "details": details,
+            "location": "RNV"
+        }
+        return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
+    except:
+        return "https://google.com"
         
 def get_service_details(session, date_str, service_id):
     # Roster aufrufen für Session-State
