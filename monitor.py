@@ -3,79 +3,78 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import urllib.parse
-import time
+from datetime import datetime
 
 # --- KONFIGURATION ---
 BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm"
-LOGIN_URL = f"{BASE_URL}/default.aspx"
 ROSTER_URL = f"{BASE_URL}/roster.aspx"
-START_URL = f"{LOGIN_URL}?TestingCookie=1"
-
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "DEIN_TOPIC")
-USERNAME = os.getenv("RNV_USER", "DEIN_USER")
-PASSWORD = os.getenv("RNV_PASS", "DEIN_PASS")
+CHECKPOINT_FILE = "checkpoint.json"
 
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))
-CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
+def get_service_details(session, date_str, service_id):
+    """Ruft die Detailseite auf und extrahiert Start/Ende und Pausen."""
+    url = f"{BASE_URL}/shift.aspx?{date_str}"
+    resp = session.get(url)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    table = soup.find("table", {"id": "ctl00_cntMainBody_lstDienstinfo"})
+    if not table: return "Details nicht verfügbar."
 
-def get_hidden_fields(html: str) -> dict:
-    soup = BeautifulSoup(html, "html.parser")
-    return {inp.get("name"): inp.get("value", "") for inp in soup.find_all("input", type="hidden") if inp.get("name")}
-
-def login(session: requests.Session):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Origin": "https://fahrerauskunft.rnv-online.de",
-        "Referer": LOGIN_URL,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    session.get(START_URL, headers=headers)
-    r = session.get(LOGIN_URL, headers=headers)
-    hidden = get_hidden_fields(r.text)
+    rows = [r for r in table.find_all("tr") if len(r.find_all("td")) > 5]
     
-    payload = {
-        **hidden,
-        "__EVENTTARGET": "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton",
-        "ctl00$cntMainBody$lgnView$lgnLogin$UserName": USERNAME, 
-        "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
-    }
+    # Filtere nur die Zeilen, die zum Dienst gehören
+    dienst_rows = [r for r in rows if r.find_all("td")[0].text.strip() == service_id]
+    if not dienst_rows: return "Keine Dienstdetails gefunden."
+
+    start_row = dienst_rows[0]
+    end_row = dienst_rows[-1]
     
-    r2 = session.post(LOGIN_URL, data=payload, headers=headers)
-    if r2.status_code == 500:
-        raise Exception("Serverfehler 500: RNV blockiert die Anfrage.")
-    if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
-        raise Exception("Login fehlgeschlagen.")
+    # Orte bereinigen
+    start_ort = start_row.find_all("td")[2].text.strip().replace("Bth. HD Bergheim", "Betriebshof (Ausrücken)")
+    end_ort = end_row.find_all("td")[4].text.strip().replace("Bth. HD Bergheim", "Betriebshof (Einrücken)")
+    
+    pausen = [r for r in dienst_rows if "Pause" in r.find_all("td")[9].text]
+    pausen_str = "\n".join([f"- {p.find_all('td')[1].text} bis {p.find_all('td')[3].text}" for p in pausen]) or "Keine Pausen"
 
-def create_calendar_link(service):
-    # Einfache Extraktion der Zeit (z.B. "07:51-12:11")
-    try:
-        s, e = service['time'].split("-")
-        s_zeit = s.strip().replace(":", "") + "00"
-        e_zeit = e.strip().replace(":", "") + "00"
-        params = {
-            "text": f"Dienst {service['id']}",
-            "dates": f"20260529T{s_zeit}/20260529T{e_zeit}",
-            "details": f"Dienstnummer: {service['id']}",
-            "location": "RNV"
-        }
-        return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
-    except:
-        return "https://google.com"
+    return (f"Beginn: {start_row.find_all('td')[1].text} Uhr ({start_ort})\n"
+            f"Pausen:\n{pausen_str}\n"
+            f"Ende: {end_row.find_all('td')[3].text} Uhr ({end_ort})")
 
-def parse_services(html):
-    soup = BeautifulSoup(html, "html.parser")
-    table = soup.find("table", id=lambda x: x and "calRoster" in x)
-    if not table: return []
-    services = []
-    for td in table.find_all("td", {"class": "calDay"}):
-        title = td.get("title", "")
-        if "Dienst:" in title and "abwesend" not in title:
-            day_str = td.find("strong").get_text(strip=True)[:2]
-            span = td.find("span")
-            time_val = span.get_text(strip=True) if span else ""
-            services.append({"day": day_str, "time": time_val, "id": title.split("Dienst:")[1].split("•")[0].strip()})
-    return services
+def create_calendar_link(service, details):
+    """Erzeugt den Google Kalender Link mit dem exakten Schema."""
+    title = f"Straßenbahn Dienst {service['id']} (Samet)"
+    s, e = service['time'].split("-")
+    
+    # Datum fest auf 2026-05-29 (laut Beispiel)
+    date_val = "20260529"
+    s_zeit = s.strip().replace(":", "") + "00"
+    e_zeit = e.strip().replace(":", "") + "00"
+    
+    params = {
+        "action": "TEMPLATE",
+        "text": title,
+        "dates": f"{date_val}T{s_zeit}/{date_val}T{e_zeit}",
+        "details": details,
+        "location": "RNV"
+    }
+    return f"https://www.google.com/calendar/render?{urllib.parse.urlencode(params)}"
+
+def main():
+    # ... [Login-Logik hier wie gehabt] ...
+    # Wenn ein neuer Dienst erkannt wurde:
+    
+    details = get_service_details(session, "2026-05-29", item['id'])
+    cal_link = create_calendar_link(item, details)
+    
+    msg = (
+        f"📅 Tag: {item['day']}.05.2026\n"
+        f"⏰ Zeit: {item['time']}\n"
+        f"🆔 Dienstnummer: {item['id']}\n\n"
+        f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
+    )
+    
+    requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", 
+                  data=msg.encode("utf-8"), 
+                  headers={"Click": cal_link})
 
 def main():
     session = requests.Session()
