@@ -103,18 +103,25 @@ def main():
         html = session.get(BASE_URL).text
         current = parse_services(html)
         
+        # DEBUG: Schau dir an, ob überhaupt etwas gefunden wurde
+        print(f"DEBUG: Gefundene Dienste in 'current': {current}")
+        
         old = json.load(open("checkpoint.json")) if os.path.exists("checkpoint.json") else []
         
-        if current != old:
-            for item in current:
-                if item not in old:
-                    notify(session, item)
-            json.dump(current, open("checkpoint.json", "w"), indent=2)
-            print("Änderungen verarbeitet.")
+        # ÄNDERUNG: Wir speichern IMMER, wenn wir Dienste gefunden haben, 
+        # damit die Datei bei jedem erfolgreichen Lauf aktualisiert wird.
+        if current:
+            if current != old:
+                print("Änderung erkannt, sende Benachrichtigungen...")
+                for item in current:
+                    if item not in old:
+                        notify(session, item)
+            
+            with open("checkpoint.json", "w") as f:
+                json.dump(current, f, indent=2)
+            print("Checkpoint gespeichert.")
         else:
-            print("Keine Änderungen.")
+            print("Warnung: Keine Dienste auf der Seite gefunden. Überprüfe den Parser!")
+            
     except Exception as e:
         print(f"Fehler: {e}")
-
-if __name__ == "__main__":
-    main()
