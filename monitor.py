@@ -92,6 +92,31 @@ def notify(message):
 from datetime import datetime
 
 def main():
+    session = requests.Session()
+    login(session)
+    html = session.get(BASE_URL).text
+    current = parse_services(html)
+    
+    # --- TEST-TRIGGER FÜR FREITAGS-DIENST ---
+    # Wir simulieren einen Dienst für Freitag, den 29.05.2026
+    test_dienst = {
+        "day": "29", 
+        "time": "08:30 - 16:45", 
+        "id": "2061036"
+    }
+    
+    # Nachricht formatieren und senden
+    msg = (f"🔔 Neuer Dienst\n"
+           f"📅 Tag: {test_dienst['day']}.05.2026\n"
+           f"⏰ Zeit: {test_dienst['time']}\n"
+           f"🆔 Dienstnummer: {test_dienst['id']}")
+    
+    notify(msg)
+    print("Test-Nachricht für Freitag wurde gesendet.")
+    # ----------------------------------------
+
+    # Danach der normale Ablauf...
+    # (Rest deines Codes wie gehabt)
     # Zeitprüfung: Nur zwischen 07:00 und 20:00 Uhr ausführen
     now = datetime.now().hour
     if not (7 <= now < 20):
