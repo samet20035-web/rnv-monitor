@@ -140,6 +140,8 @@ def main():
             except: old = []
 
     # 2. Vergleichen und speichern
+    print(f"DEBUG: Current Dienste: {current}")
+    print(f"DEBUG: Old Dienste: {old}")
     if current != old:
         print("Änderung erkannt!")
         for item in current:
