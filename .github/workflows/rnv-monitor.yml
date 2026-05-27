@@ -31,21 +31,16 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python monitor.py
 
-     - name: Commit changes
+      - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Prüfen, ob die Datei existiert
+          # Nur adden, wenn die Datei existiert
           if [ -f "checkpoint.json" ]; then
             git add checkpoint.json
-            # Prüfen, ob sich etwas geändert hat, sonst nichts tun
+            # Nur committen, wenn sich der Inhalt wirklich geändert hat
             if ! git diff --quiet --cached; then
               git commit -m "Update RNV Dienstplan"
               git push
-            else
-              echo "Keine Änderungen zum Committen."
             fi
-          else
-            echo "checkpoint.json existiert noch nicht, kein Commit nötig."
           fi
