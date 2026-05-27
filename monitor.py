@@ -18,7 +18,8 @@ BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 
 def login(session: requests.Session):
-headers = {
+    # Alles, was zur Funktion gehört, muss hier mit 4 Leerzeichen eingerückt sein:
+    headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         "Origin": "https://fahrerauskunft.rnv-online.de",
         "Referer": LOGIN_URL,
@@ -28,12 +29,17 @@ headers = {
         "Content-Type": "application/x-www-form-urlencoded"
     }
     
-    # 1. Starten
     session.get(START_URL, headers=headers)
-    
-    # 2. Login-Seite laden, um Viewstate zu bekommen
-    r = session.get(LOGIN_URL, headers=headers)
-    soup = BeautifulSoup(r.text, "html.parser")
+    time.sleep(1)
+
+    for attempt in range(5):
+        r = session.get(LOGIN_URL, headers=headers)
+        soup = BeautifulSoup(r.text, "html.parser")
+        if soup.find("input", {"name": "__VIEWSTATE"}):
+            break
+        time.sleep(2)
+    else:
+        raise Exception("Login-Seite nach 5 Versuchen nicht geladen.")
     
     # 3. Formularfelder extrahieren
     viewstate = soup.find("input", {"id": "__VIEWSTATE"})
