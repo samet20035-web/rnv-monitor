@@ -14,6 +14,7 @@ START_URL = f"{LOGIN_URL}?TestingCookie=1"
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "DEIN_TOPIC")
 USERNAME = os.getenv("RNV_USER", "DEIN_USER")
 PASSWORD = os.getenv("RNV_PASS", "DEIN_PASS")
+MEIN_NAME = "Samet"  # Dein Name für den Titel
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
@@ -48,74 +49,85 @@ def login(session: requests.Session):
         raise Exception("Login fehlgeschlagen.")
 
 def create_calendar_link(service, details, date_str=None):
+    """Erstellt einen Google-Kalender-Link mit Titel, Zeit und Beschreibung."""
     try:
-        time_str = service['time'].strip()
-        # Ersetze evtl. andere Trennzeichen durch Bindestrich
-        time_str = time_str.replace("–", "-").replace("—", "-")
-        parts = time_str.split("-")
-        if len(parts) != 2:
-            return "https://google.com"
-        s, e = parts[0], parts[1]
-        
-        s_zeit = s.strip().replace(":", "") + "00"
-        e_zeit = e.strip().replace(":", "") + "00"
-        
         if date_str is None:
             date_str = "2026-05-29"
         
+        s, e = service['time'].strip().split("-")
+        s_zeit = s.strip().replace(":", "") + "00"
+        e_zeit = e.strip().replace(":", "") + "00"
+        
         date_compact = date_str.replace("-", "")
+        
+        # Titel wie gewünscht: "Straßenbahn Dienst [Nummer] (Samet)"
+        title = f"Straßenbahn Dienst {service['id']} ({MEIN_NAME})"
+        
         params = {
-            "text": f"Dienst {service['id']}",
+            "text": title,
             "dates": f"{date_compact}T{s_zeit}/{date_compact}T{e_zeit}",
             "details": details,
             "location": "RNV"
         }
         return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
-    except:
+    except Exception as ex:
+        print(f"Warnung: Kalenderlink konnte nicht erstellt werden: {ex}")
         return "https://google.com"
-        
+
 def get_service_details(session, date_str, service_id):
-    # Roster aufrufen für Session-State
+    """Holt die Details für einen Dienst (Beginn, Pausen, Ende, Orte)."""
     session.get(ROSTER_URL)
     
-    # Klick simulieren (Event-Payload)
     payload = {
         "__EVENTTARGET": "ctl00$cntMainBody$calRoster",
         "__EVENTARGUMENT": date_str
     }
     session.post(ROSTER_URL, data=payload)
     
-    # Detailseite aufrufen
-    resp = session.get(f"{BASE_URL}/shift.aspx")
+    resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}")
     soup = BeautifulSoup(resp.text, "html.parser")
     table = soup.find("table", {"id": "ctl00_cntMainBody_lstDienstinfo"})
     
-    if not table: return "Details nicht verfügbar."
+    if not table: 
+        return "Details nicht verfügbar."
 
     rows = [r for r in table.find_all("tr") if len(r.find_all("td")) > 5]
     dienst_rows = [r for r in rows if r.find_all("td")[0].text.strip() == service_id]
     
-    if not dienst_rows: return "Keine Dienstdetails gefunden."
+    if not dienst_rows: 
+        return "Keine Dienstdetails gefunden."
 
     start_row = dienst_rows[0]
     end_row = dienst_rows[-1]
+    
+    tds_start = start_row.find_all("td")
+    tds_end = end_row.find_all("td")
+    
+    start_zeit = tds_start[1].text.strip() if len(tds_start) > 1 else "-"
+    start_ort = tds_start[2].text.strip() if len(tds_start) > 2 else "-"
+    end_zeit = tds_end[3].text.strip() if len(tds_end) > 3 else "-"
+    end_ort = tds_end[4].text.strip() if len(tds_end) > 4 else "-"
     
     pausen = []
     for r in dienst_rows:
         tds = r.find_all("td")
         if len(tds) > 9 and "Pause" in tds[9].text:
-            pausen.append(f"- {tds[1].text} bis {tds[3].text} ({tds[9].text.strip()})")
+            pause_von = tds[1].text.strip() if len(tds) > 1 else "-"
+            pause_bis = tds[3].text.strip() if len(tds) > 3 else "-"
+            pause_art = tds[9].text.strip()
+            pausen.append(f"- {pause_von} bis {pause_bis} ({pause_art})")
     
     pausen_str = "\n".join(pausen) if pausen else "Keine Pausen"
 
-    return (f"Beginn: {start_row.find_all('td')[1].text}\n"
+    return (f"Beginn: {start_zeit} – {start_ort}\n"
             f"Pausen:\n{pausen_str}\n"
-            f"Ende: {end_row.find_all('td')[3].text}")
-    
+            f"Ende: {end_zeit} – {end_ort}")
+
 def parse_services(html):
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id=lambda x: x and "calRoster" in x)
-    if not table: return []
+    if not table: 
+        return []
     services = []
     for td in table.find_all("td", {"class": "calDay"}):
         title = td.get("title", "")
@@ -133,9 +145,6 @@ def main():
         html = session.get(ROSTER_URL).text
         current = parse_services(html)
         
-        old = json.load(open(CHECKPOINT_FILE)) if os.path.exists(CHECKPOINT_FILE) else []
-
-        # Robusteres Laden des Checkpoints
         old = []
         if os.path.exists(CHECKPOINT_FILE):
             try:
@@ -143,23 +152,33 @@ def main():
                     old = json.load(f)
             except (json.JSONDecodeError, ValueError):
                 print("Warnung: Checkpoint-Datei war korrupt, erstelle neue Liste.")
-                old = [] # Bei Fehler einfach als leere Liste starten
+                old = []
             
         if current != old:
             for item in current:
-              if item not in old:
-                # 1. Details abrufen (Datum anpassen, z.B. aus deinem Tag berechnet)
-                details = get_service_details(session, "2026-05-29", item['id'])
-    
-                # 2. Nachricht inkl. Details
-                msg = (f"🔔 Neuer Dienst {item['id']}\n"
-                       f"📅 Tag: {item['day']}.05.2026\n"
-                       f"{details}\n\n"
-                       f"👉 Tippe hier, um den Dienst zum Kalender hinzuzufügen!")
-    
-                # 3. Kalender-Link (hier kannst du 'details' auch in die Parameter aufnehmen)
-                headers = {"Click": create_calendar_link(item, details, "2026-05-29")}
-                requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
+                if item not in old:
+                    # Datum aus dem Tag berechnen
+                    service_date = f"2026-05-{item['day']}"
+                    
+                    # Details abrufen
+                    details = get_service_details(session, service_date, item['id'])
+        
+                    # Nachrichtenaufbau wie gewünscht
+                    msg = (
+                        f"🔔 Neuer Dienst {item['id']}\n"
+                        f"📅 Tag: {item['day']}.05.2026\n"
+                        f"⏰ Zeit: {item['time']}\n"
+                        f"🆔 Dienstnummer: {item['id']}\n\n"
+                        f"{details}\n\n"
+                        f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
+                    )
+        
+                    # Kalenderlink mit allen Parametern
+                    calendar_link = create_calendar_link(item, details, service_date)
+                    headers = {"Click": calendar_link}
+                    
+                    requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
+                    print(f"Nachricht gesendet für Dienst {item['id']}")
             
             with open(CHECKPOINT_FILE, "w") as f:
                 json.dump(current, f, indent=2)
