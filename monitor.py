@@ -121,52 +121,36 @@ def notify(service):
 from datetime import datetime
 
 def main():
+    print("--- STARTE MONITOR ---")
     session = requests.Session()
-    login(session)
-    html = session.get(BASE_URL).text
-    current = parse_services(html)
-
-    # 1. Altes Ergebnis laden
-    old = []
-    if os.path.exists("checkpoint.json"):
-        with open("checkpoint.json", "r") as f:
-            try: old = json.load(f)
-            except: old = []
-
-    # 2. Vergleichen und speichern
-    print(f"DEBUG: Current Dienste: {current}")
-    print(f"DEBUG: Old Dienste: {old}")
-    if current != old:
-        print("Änderung erkannt!")
-        for item in current:
-            # Benachrichtige nur, wenn es ein wirklich neuer oder geänderter Dienst ist
-            if item not in old:
-                notify(item) # Hier wird jetzt direkt der Kalender-Link generiert
-                print(f"Push gesendet für Dienst: {item['id']}")
+    
+    try:
+        login(session)
+        print("Login erfolgreich!")
         
-        # Speichern für den nächsten Vergleich
-        with open("checkpoint.json", "w") as f:
-            json.dump(current, f, indent=2)
-    else:
-        print("Keine Änderungen.")
-
-    # 3. Altes Ergebnis laden
-    old = []
-    if os.path.exists("checkpoint.json"):
-        with open("checkpoint.json", "r") as f:
-            try: old = json.load(f)
-            except: old = []
-
-    # 4. Vergleichen und speichern
-    if current != old:
-        print("Änderung erkannt!")
-        for item in current:
-            if item not in old:
-                # Hier rufen wir notify(item) auf, damit der Kalender-Link entsteht
-                notify(item) 
-                print(f"Push gesendet für Dienst: {item['id']}")
+        html = session.get(BASE_URL).text
+        current = parse_services(html)
+        print(f"DEBUG: Gefundene Dienste: {current}")
         
-        with open("checkpoint.json", "w") as f:
-            json.dump(current, f, indent=2)
-    else:
-        print("Keine Änderungen.")
+        old = []
+        if os.path.exists("checkpoint.json"):
+            with open("checkpoint.json", "r") as f:
+                old = json.load(f)
+        
+        if current != old:
+            print("Änderung erkannt!")
+            for item in current:
+                if item not in old:
+                    notify(item)
+                    print(f"Push gesendet für Dienst: {item['id']}")
+            
+            with open("checkpoint.json", "w") as f:
+                json.dump(current, f, indent=2)
+        else:
+            print("Keine Änderungen.")
+            
+    except Exception as e:
+        print(f"FEHLER: {e}")
+
+if __name__ == "__main__":
+    main()
