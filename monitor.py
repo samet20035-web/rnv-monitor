@@ -15,15 +15,31 @@ PASSWORD = os.getenv("RNV_PASS", "DEIN_PASS")
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 
+import time
+
 def login(session: requests.Session):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         "Referer": LOGIN_URL,
         "Content-Type": "application/x-www-form-urlencoded"
     }
-    r = session.get(LOGIN_URL, headers=headers)
-    soup = BeautifulSoup(r.text, "html.parser")
+    
+    # Versuche es bis zu 5 Mal, falls die Seite nicht sofort lädt
+    for attempt in range(5):
+        r = session.get(LOGIN_URL, headers=headers)
+        soup = BeautifulSoup(r.text, "html.parser")
+        
+        # Prüfe, ob wir ein Login-Formular sehen
+        if soup.find("input", {"name": "__VIEWSTATE"}):
+            print(f"Login-Seite nach {attempt+1} Versuch(en) erfolgreich geladen.")
+            break
+        else:
+            print(f"Versuch {attempt+1}: Login-Seite noch nicht bereit, warte 2 Sekunden...")
+            time.sleep(2)
+    else:
+        raise Exception("Login-Seite konnte auch nach 5 Versuchen nicht geladen werden.")
 
+    # Ab hier geht der Login weiter...
     def get_input(name):
         tag = soup.find("input", {"name": name})
         return tag["value"] if tag and tag.has_attr("value") else ""
@@ -36,14 +52,13 @@ def login(session: requests.Session):
         "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
         "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton": "Anmelden"
     }
-    
     r2 = session.post(LOGIN_URL, data=payload, headers=headers)
     
-    # DEBUG: Wenn Login fehlschlägt, den Inhalt der Antwort speichern
     if not ("logout" in r2.text.lower() or "abmelden" in r2.text.lower() or "Dienstplan" in r2.text):
+        # Hier speichern wir den Fehler, um ihn in den Artifacts zu sehen
         with open(os.path.join(BASE_PATH, "login_error.html"), "w", encoding="utf-8") as f:
             f.write(r2.text)
-        raise Exception(f"Login fehlgeschlagen! Status: {r2.status_code}. (Siehe login_error.html)")
+        raise Exception("Login fehlgeschlagen (Daten wurden gesendet, aber kein Dienstplan sichtbar).")
         
 def get_service_details(session, date_str, service_id):
     url = f"https://fahrerauskunft.rnv-online.de/WebComm/shift.aspx?{date_str}"
