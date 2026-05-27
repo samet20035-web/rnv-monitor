@@ -56,13 +56,44 @@ def create_calendar_link(service):
         params = {
             "text": f"Dienst {service['id']}",
             "dates": f"20260529T{s_zeit}/20260529T{e_zeit}",
-            "details": f"Dienstnummer: {service['id']}",
+            "details": details, # Hier die Pausen und Orte einfügen
             "location": "RNV"
         }
         return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
     except:
         return "https://google.com"
+        
+def get_service_details(session, date_str, service_id):
+    # Die URL zur Detailseite des Dienstes
+    url = f"{BASE_URL}/shift.aspx?date={date_str}" 
+    resp = session.get(url)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    table = soup.find("table", {"id": "ctl00_cntMainBody_lstDienstinfo"})
+    if not table: return "Details nicht verfügbar."
 
+    # Zeilen filtern, die zum Dienst gehören
+    rows = [r for r in table.find_all("tr") if len(r.find_all("td")) > 5]
+    dienst_rows = [r for r in rows if r.find_all("td")[0].text.strip() == service_id]
+    
+    if not dienst_rows: return "Keine Dienstdetails gefunden."
+
+    # Start und Ende extrahieren
+    start_row = dienst_rows[0]
+    end_row = dienst_rows[-1]
+    
+    # Pausen finden (Spalte 9 ist bei dir der Typ)
+    pausen = []
+    for r in dienst_rows:
+        tds = r.find_all("td")
+        if len(tds) > 9 and "Pause" in tds[9].text:
+            pausen.append(f"- {tds[1].text} bis {tds[3].text} ({tds[9].text.strip()})")
+    
+    pausen_str = "\n".join(pausen) if pausen else "Keine Pausen"
+
+    return (f"Beginn: {start_row.find_all('td')[1].text}\n"
+            f"Pausen:\n{pausen_str}\n"
+            f"Ende: {end_row.find_all('td')[3].text}")
+    
 def parse_services(html):
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id=lambda x: x and "calRoster" in x)
