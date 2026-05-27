@@ -31,7 +31,6 @@ jobs:
           RNV_PASS: ${{ secrets.RNV_PASS }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
-          ls -la  # <--- FÜGE DIESE ZEILE EIN!
           python monitor.py
           
       - name: Commit changes
