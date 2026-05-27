@@ -47,8 +47,7 @@ def login(session: requests.Session):
     if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
         raise Exception("Login fehlgeschlagen.")
 
-def create_calendar_link(service):
-    # Einfache Extraktion der Zeit (z.B. "07:51-12:11")
+def create_calendar_link(service, details):
     try:
         s, e = service['time'].split("-")
         s_zeit = s.strip().replace(":", "") + "00"
@@ -56,7 +55,7 @@ def create_calendar_link(service):
         params = {
             "text": f"Dienst {service['id']}",
             "dates": f"20260529T{s_zeit}/20260529T{e_zeit}",
-            "details": details, # Hier die Pausen und Orte einfügen
+            "details": details, 
             "location": "RNV"
         }
         return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
@@ -64,43 +63,31 @@ def create_calendar_link(service):
         return "https://google.com"
         
 def get_service_details(session, date_str, service_id):
-    # 1. Wir müssen erst die Roster-Seite "aufrufen", damit die Session weiß, 
-    # dass wir in der Dienstplan-Ansicht sind.
+    # Roster aufrufen für Session-State
     session.get(ROSTER_URL)
     
-    # 2. Um den Tag/Dienst zu "klicken", müssen wir oft die hidden fields 
-    # der Roster-Seite mitsenden, damit das System weiß, welcher Tag gemeint ist.
-    # Da die RNV-Seite wahrscheinlich mit __EVENTTARGET arbeitet:
-    # (Dies ist der Teil, der im Browser beim Klicken passiert)
+    # Klick simulieren (Event-Payload)
     payload = {
-        "__EVENTTARGET": "ctl00$cntMainBody$calRoster", # Das ist der Kalender-Control-Name
-        "__EVENTARGUMENT": date_str,                   # Hier wird das Datum übergeben
-        # Manchmal müssen hier noch andere __VIEWSTATE Felder mit, 
-        # die wir von der Roster-Seite auslesen müssten.
+        "__EVENTTARGET": "ctl00$cntMainBody$calRoster",
+        "__EVENTARGUMENT": date_str
     }
-    
-    # Klick simulieren
     session.post(ROSTER_URL, data=payload)
     
-    # 3. Jetzt erst die Detailseite aufrufen
+    # Detailseite aufrufen
     resp = session.get(f"{BASE_URL}/shift.aspx")
     soup = BeautifulSoup(resp.text, "html.parser")
-    resp = session.get(url)
-    soup = BeautifulSoup(resp.text, "html.parser")
     table = soup.find("table", {"id": "ctl00_cntMainBody_lstDienstinfo"})
+    
     if not table: return "Details nicht verfügbar."
 
-    # Zeilen filtern, die zum Dienst gehören
     rows = [r for r in table.find_all("tr") if len(r.find_all("td")) > 5]
     dienst_rows = [r for r in rows if r.find_all("td")[0].text.strip() == service_id]
     
     if not dienst_rows: return "Keine Dienstdetails gefunden."
 
-    # Start und Ende extrahieren
     start_row = dienst_rows[0]
     end_row = dienst_rows[-1]
     
-    # Pausen finden (Spalte 9 ist bei dir der Typ)
     pausen = []
     for r in dienst_rows:
         tds = r.find_all("td")
