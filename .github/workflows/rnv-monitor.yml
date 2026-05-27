@@ -34,14 +34,14 @@ jobs:
           python monitor.py
 
       - name: Commit changes
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        # Prüfe erst, ob die Datei existiert, bevor wir adden
-        if [ -f checkpoint.json ]; then
-          git add checkpoint.json
-          git commit -m "Update checkpoint" || echo "Keine Änderungen zu committen"
-          git push
-        else
-          echo "checkpoint.json existiert nicht, überspringe Commit."
-        fi
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Prüfe erst, ob die Datei existiert, bevor wir adden
+          if [ -f checkpoint.json ]; then
+            git add checkpoint.json
+            git commit -m "Update checkpoint" || echo "Keine Änderungen zu committen"
+            git push
+          else
+            echo "checkpoint.json existiert nicht, überspringe Commit."
+          fi
