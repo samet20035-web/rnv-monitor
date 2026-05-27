@@ -46,8 +46,8 @@ def login(session: requests.Session):
     
     r2 = session.post(LOGIN_URL, data=payload, headers=headers)
     
-print(f"DEBUG: Status Code nach Login: {r2.status_code}")
-    # Speichere IMMER, egal ob Login Erfolg oder nicht, damit wir sehen was passiert
+    # DEBUG: Status ausgeben und speichern
+    print(f"DEBUG: Status Code nach Login: {r2.status_code}")
     with open(os.path.join(BASE_PATH, "debug_login_response.html"), "w", encoding="utf-8") as f:
         f.write(r2.text)
     
