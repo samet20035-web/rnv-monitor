@@ -87,13 +87,6 @@ def main():
     html = session.get(BASE_URL).text
     current = parse_services(html)
 
-    print(f"Gefundene Dienste: {current}") # Damit siehst du im Log, was er gefunden hat
-    
-    # --- TEST-TRIGGER FÜR PUSH ---
-    # Entferne diese Zeile wieder, wenn du sie nicht mehr brauchst!
-    notify(f"Test-Push: Gefunden wurden {len(current)} Dienste. Der erste ist: {current[0] if current else 'Keine'}")
-    # -----------------------------
-
     old = []
     # 1. Altes Ergebnis laden
     old = []
