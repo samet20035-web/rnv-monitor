@@ -88,17 +88,19 @@ def main():
         
         if current != old:
             for item in current:
-                if item not in old:
-                    msg = (
-                        f"🔔 Neuer Dienst {item['id']}\n"
-                        f"📅 Tag: {item['day']}.05.2026\n"
-                        f"⏰ Zeit: {item['time']}\n"
-                        f"🆔 Dienstnummer: {item['id']}\n\n"
-                        f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
-                    )
-                    # Kalender-Link als Click-Attribut in der ntfy-Nachricht
-                    headers = {"Click": create_calendar_link(item)}
-                    requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
+              if item not in old:
+                # 1. Details abrufen (Datum anpassen, z.B. aus deinem Tag berechnet)
+                details = get_service_details(session, "2026-05-29", item['id'])
+    
+                # 2. Nachricht inkl. Details
+                msg = (f"🔔 Neuer Dienst {item['id']}\n"
+                       f"📅 Tag: {item['day']}.05.2026\n"
+                       f"{details}\n\n"
+                       f"👉 Tippe hier, um den Dienst zum Kalender hinzuzufügen!")
+    
+                # 3. Kalender-Link (hier kannst du 'details' auch in die Parameter aufnehmen)
+                headers = {"Click": create_calendar_link(item)} # Hier könntest du noch details als Parameter übergeben
+                requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
             
             with open(CHECKPOINT_FILE, "w") as f:
                 json.dump(current, f, indent=2)
