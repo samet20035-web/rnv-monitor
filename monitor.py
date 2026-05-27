@@ -19,7 +19,6 @@ BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 
 def get_hidden_fields(html: str) -> dict:
-    """Extrahiert alle versteckten Felder (VIEWSTATE, EVENTVALIDATION, etc.)"""
     soup = BeautifulSoup(html, "html.parser")
     return {inp.get("name"): inp.get("value", "") for inp in soup.find_all("input", type="hidden") if inp.get("name")}
 
@@ -31,18 +30,10 @@ def login(session: requests.Session):
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Content-Type": "application/x-www-form-urlencoded"
     }
-    
-    # 1. Cookie-Initialisierung
     session.get(START_URL, headers=headers)
-    
-    # 2. Login-Seite laden
     r = session.get(LOGIN_URL, headers=headers)
     hidden = get_hidden_fields(r.text)
     
-    if "__VIEWSTATE" not in hidden:
-        raise Exception("Login-Seite liefert kein __VIEWSTATE. Zugriff vermutlich blockiert.")
-
-    # 3. Payload aufbauen
     payload = {
         **hidden,
         "__EVENTTARGET": "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton",
@@ -50,24 +41,32 @@ def login(session: requests.Session):
         "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
     }
     
-    # 4. POST Request
     r2 = session.post(LOGIN_URL, data=payload, headers=headers)
-    
-    # Debugging bei Fehler
-    with open(os.path.join(BASE_PATH, "debug_login.html"), "w", encoding="utf-8") as f:
-        f.write(r2.text)
-        
     if r2.status_code == 500:
-        raise Exception("Serverfehler 500: Die RNV-Seite blockiert die Anfrage (IP-Sperre).")
-    
+        raise Exception("Serverfehler 500: RNV blockiert die Anfrage.")
     if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
-        raise Exception("Login fehlgeschlagen. Bitte Zugangsdaten in Secrets prüfen.")
+        raise Exception("Login fehlgeschlagen.")
+
+def create_calendar_link(service):
+    # Einfache Extraktion der Zeit (z.B. "07:51-12:11")
+    try:
+        s, e = service['time'].split("-")
+        s_zeit = s.strip().replace(":", "") + "00"
+        e_zeit = e.strip().replace(":", "") + "00"
+        params = {
+            "text": f"Dienst {service['id']}",
+            "dates": f"20260529T{s_zeit}/20260529T{e_zeit}",
+            "details": f"Dienstnummer: {service['id']}",
+            "location": "RNV"
+        }
+        return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
+    except:
+        return "https://google.com"
 
 def parse_services(html):
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id=lambda x: x and "calRoster" in x)
     if not table: return []
-    
     services = []
     for td in table.find_all("td", {"class": "calDay"}):
         title = td.get("title", "")
@@ -82,9 +81,6 @@ def main():
     session = requests.Session()
     try:
         login(session)
-        print("Login erfolgreich.")
-        
-        # Dienste abrufen
         html = session.get(ROSTER_URL).text
         current = parse_services(html)
         
@@ -93,12 +89,20 @@ def main():
         if current != old:
             for item in current:
                 if item not in old:
-                    msg = f"🔔 Neuer Dienst {item['id']}\n📅 {item['day']}.05.2026\n⏰ {item['time']}"
-                    requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"))
+                    msg = (
+                        f"🔔 Neuer Dienst {item['id']}\n"
+                        f"📅 Tag: {item['day']}.05.2026\n"
+                        f"⏰ Zeit: {item['time']}\n"
+                        f"🆔 Dienstnummer: {item['id']}\n\n"
+                        f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
+                    )
+                    # Kalender-Link als Click-Attribut in der ntfy-Nachricht
+                    headers = {"Click": create_calendar_link(item)}
+                    requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
             
             with open(CHECKPOINT_FILE, "w") as f:
                 json.dump(current, f, indent=2)
-            print("Änderungen gefunden und gemeldet.")
+            print("Checkpoint gespeichert.")
         else:
             print("Keine Änderungen.")
             
