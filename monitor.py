@@ -20,36 +20,42 @@ CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 def login(session: requests.Session):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Referer": START_URL
     }
     
+    # 1. Starten
     session.get(START_URL, headers=headers)
-    time.sleep(1)
+    
+    # 2. Login-Seite laden, um Viewstate zu bekommen
+    r = session.get(LOGIN_URL, headers=headers)
+    soup = BeautifulSoup(r.text, "html.parser")
+    
+    # 3. Formularfelder extrahieren
+    viewstate = soup.find("input", {"id": "__VIEWSTATE"})
+    eventval = soup.find("input", {"id": "__EVENTVALIDATION"})
+    gen = soup.find("input", {"id": "__VIEWSTATEGENERATOR"})
 
-    for attempt in range(5):
-        r = session.get(LOGIN_URL, headers=headers)
-        soup = BeautifulSoup(r.text, "html.parser")
-        if soup.find("input", {"name": "__VIEWSTATE"}):
-            break
-        time.sleep(2)
-    else:
-        raise Exception("Login-Seite nach 5 Versuchen nicht geladen.")
+    if not viewstate or not eventval:
+        raise Exception("Konnte Viewstate/Eventvalidation nicht finden. Seite blockt uns.")
 
     payload = {
-        "__VIEWSTATE": soup.find("input", {"name": "__VIEWSTATE"})["value"],
-        "__VIEWSTATEGENERATOR": soup.find("input", {"name": "__VIEWSTATEGENERATOR"})["value"],
-        "__EVENTVALIDATION": soup.find("input", {"name": "__EVENTVALIDATION"})["value"],
+        "__VIEWSTATE": viewstate["value"],
+        "__VIEWSTATEGENERATOR": gen["value"] if gen else "",
+        "__EVENTVALIDATION": eventval["value"],
         "ctl00$cntMainBody$lgnView$lgnLogin$UserName": USERNAME, 
         "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
         "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton": "Anmelden"
     }
     
+    # 4. POST request
     r2 = session.post(LOGIN_URL, data=payload, headers=headers)
     
-    # DEBUG: Status ausgeben und speichern
-    print(f"DEBUG: Status Code nach Login: {r2.status_code}")
-    with open(os.path.join(BASE_PATH, "debug_login_response.html"), "w", encoding="utf-8") as f:
-        f.write(r2.text)
+    # Debug: Wenn 500 kommt, HTML speichern
+    if r2.status_code == 500:
+        with open("debug_500.html", "w", encoding="utf-8") as f:
+            f.write(r2.text)
+        raise Exception("Serverfehler 500: Login-Daten wurden abgelehnt.")
     
     if not ("logout" in r2.text.lower() or "abmelden" in r2.text.lower() or "Dienstplan" in r2.text):
         raise Exception("Login fehlgeschlagen.")
