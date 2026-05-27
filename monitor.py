@@ -33,10 +33,10 @@ def login(session: requests.Session):
         "__VIEWSTATE": get_input("__VIEWSTATE"),
         "__VIEWSTATEGENERATOR": get_input("__VIEWSTATEGENERATOR"),
         "__EVENTVALIDATION": get_input("__EVENTVALIDATION"),
-        # Hier die Namen eintragen, die du im DEBUG-Log unten findest:
-        "ctl00$txtUsername": USERNAME, 
-        "ctl00$txtPassword": PASSWORD,
-        "ctl00$btnLogin": "Login",
+        # Hier die exakten Namen aus deinem Log:
+        "ctl00$cntMainBody$lgnView$lgnLogin$UserName": USERNAME, 
+        "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
+        "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton": "Anmelden", # Falls "Anmelden" nicht geht, versuche "Login"
     }
 
     # 3. Einloggen
