@@ -18,38 +18,6 @@ PASSWORD = os.getenv("RNV_PASS", "DEIN_PASS")
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 
-def format_location(text):
-    """Übersetzt RNV-Orte in das gewünschte Format für die Mutter."""
-    text = text.replace("Bth. HD Bergheim", "Betriebshof")
-    if "Betriebshof" in text:
-        return f"{text} (Ausrücken/Einrücken)"
-    return text
-
-def create_calendar_link(service, details):
-    """
-    Erzeugt einen Link für den iPhone Kalender mit dem gewünschten Format.
-    details: Ein String, den wir aus get_service_details erhalten.
-    """
-    # 1. Titel-Schema: Straßenbahn Dienst [Nummer] (Samet)
-    title = f"Straßenbahn Dienst {service['id']} (Samet)"
-    
-    # 2. Uhrzeit extrahieren (Annahme: service['time'] ist "HH:MM-HH:MM")
-    s, e = service['time'].split("-")
-    s_zeit = s.strip().replace(":", "") + "00"
-    e_zeit = e.strip().replace(":", "") + "00"
-    
-    # 3. Beschreibung: Stationen und Pausen
-    # Wir nehmen die Details, die get_service_details liefert, und formatieren sie
-    description = f"{details}" 
-    
-    params = {
-        "text": title,
-        "dates": f"20260529T{s_zeit}/20260529T{e_zeit}", # Datum muss ggf. dynamisch sein
-        "details": description,
-        "location": "RNV"
-    }
-    return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
-
 def get_hidden_fields(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     return {inp.get("name"): inp.get("value", "") for inp in soup.find_all("input", type="hidden") if inp.get("name")}
@@ -121,9 +89,6 @@ def main():
         if current != old:
             for item in current:
                 if item not in old:
-                    raw_details = get_service_details(session, "2026-05-29", item['id'])
-                    clean_details = format_location(raw_details)
-                    
                     msg = (
                         f"🔔 Neuer Dienst {item['id']}\n"
                         f"📅 Tag: {item['day']}.05.2026\n"
@@ -131,11 +96,16 @@ def main():
                         f"🆔 Dienstnummer: {item['id']}\n\n"
                         f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                     )
-                    headers = {"Click": create_calendar_link(item, clean_details)}
+                    # Kalender-Link als Click-Attribut in der ntfy-Nachricht
+                    headers = {"Click": create_calendar_link(item)}
                     requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
             
             with open(CHECKPOINT_FILE, "w") as f:
                 json.dump(current, f, indent=2)
+            print("Checkpoint gespeichert.")
+        else:
+            print("Keine Änderungen.")
+            
     except Exception as e:
         print(f"KRITISCHER FEHLER: {e}")
 
