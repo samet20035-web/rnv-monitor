@@ -99,29 +99,25 @@ def notify(session, service):
 def main():
     session = requests.Session()
     try:
+        print("Starte Login...")
         login(session)
-        html = session.get(BASE_URL).text
+        print("Login OK. Lade Dienstplan...")
+        
+        response = session.get(BASE_URL)
+        html = response.text
+        
+        # DEBUG: Wir speichern den rohen HTML Inhalt, um zu sehen, ob wir auf der richtigen Seite sind
+        with open("debug_page.html", "w", encoding="utf-8") as f:
+            f.write(html)
+        print("HTML wurde in debug_page.html gespeichert. Prüfe diese Datei!")
+
         current = parse_services(html)
-        
-        # DEBUG: Schau dir an, ob überhaupt etwas gefunden wurde
-        print(f"DEBUG: Gefundene Dienste in 'current': {current}")
-        
-        old = json.load(open("checkpoint.json")) if os.path.exists("checkpoint.json") else []
-        
-        # ÄNDERUNG: Wir speichern IMMER, wenn wir Dienste gefunden haben, 
-        # damit die Datei bei jedem erfolgreichen Lauf aktualisiert wird.
-        if current:
-            if current != old:
-                print("Änderung erkannt, sende Benachrichtigungen...")
-                for item in current:
-                    if item not in old:
-                        notify(session, item)
-            
-            with open("checkpoint.json", "w") as f:
-                json.dump(current, f, indent=2)
-            print("Checkpoint gespeichert.")
-        else:
-            print("Warnung: Keine Dienste auf der Seite gefunden. Überprüfe den Parser!")
+        print(f"Gefundene Dienste: {len(current)}")
+
+        # Datei erzwingen, selbst wenn sie leer ist, um zu sehen, ob das Schreiben klappt
+        with open("checkpoint.json", "w") as f:
+            json.dump(current, f, indent=2)
+        print("checkpoint.json wurde geschrieben.")
             
     except Exception as e:
-        print(f"Fehler: {e}")
+        print(f"FEHLER im Ablauf: {e}")
