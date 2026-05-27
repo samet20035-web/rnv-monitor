@@ -3,10 +3,11 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import urllib.parse
+import time  # WICHTIG: Das fehlte!
 
+# --- KONFIGURATION ---
 BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm/roster.aspx"
 LOGIN_URL = "https://fahrerauskunft.rnv-online.de/WebComm/default.aspx"
-# WICHTIG: Die URL mit dem Cookie-Parameter für den ersten Aufruf
 START_URL = "https://fahrerauskunft.rnv-online.de/WebComm/default.aspx?TestingCookie=1"
 
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "DEIN_TOPIC")
@@ -22,11 +23,9 @@ def login(session: requests.Session):
         "Referer": START_URL
     }
     
-    # 1. Erst den Start-URL-Aufruf (mit Cookie-Parameter)
     session.get(START_URL, headers=headers)
-    time.sleep(1) # Kurze Pause nach dem Cookie-Setzen
+    time.sleep(1)
 
-    # 2. Jetzt die echte Login-Seite laden
     for attempt in range(5):
         r = session.get(LOGIN_URL, headers=headers)
         soup = BeautifulSoup(r.text, "html.parser")
@@ -36,27 +35,21 @@ def login(session: requests.Session):
     else:
         raise Exception("Login-Seite nach 5 Versuchen nicht geladen.")
 
-    def get_input(name):
-        tag = soup.find("input", {"name": name})
-        return tag["value"] if tag and tag.has_attr("value") else ""
-
     payload = {
-        "__VIEWSTATE": get_input("__VIEWSTATE"),
-        "__VIEWSTATEGENERATOR": get_input("__VIEWSTATEGENERATOR"),
-        "__EVENTVALIDATION": get_input("__EVENTVALIDATION"),
+        "__VIEWSTATE": soup.find("input", {"name": "__VIEWSTATE"})["value"],
+        "__VIEWSTATEGENERATOR": soup.find("input", {"name": "__VIEWSTATEGENERATOR"})["value"],
+        "__EVENTVALIDATION": soup.find("input", {"name": "__EVENTVALIDATION"})["value"],
         "ctl00$cntMainBody$lgnView$lgnLogin$UserName": USERNAME, 
         "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
         "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton": "Anmelden"
     }
     
     r2 = session.post(LOGIN_URL, data=payload, headers=headers)
-    if not ("logout" in r2.text.lower() or "abmelden" in r2.text.lower() or "Dienstplan" in r2.text):
-        raise Exception("Login fehlgeschlagen.")
     
-        # Hier speichern wir den Fehler, um ihn in den Artifacts zu sehen
+    if not ("logout" in r2.text.lower() or "abmelden" in r2.text.lower() or "Dienstplan" in r2.text):
         with open(os.path.join(BASE_PATH, "login_error.html"), "w", encoding="utf-8") as f:
             f.write(r2.text)
-        raise Exception("Login fehlgeschlagen (Daten wurden gesendet, aber kein Dienstplan sichtbar).")
+        raise Exception("Login fehlgeschlagen. Siehe login_error.html im Artifact-Ordner.")
         
 def get_service_details(session, date_str, service_id):
     url = f"https://fahrerauskunft.rnv-online.de/WebComm/shift.aspx?{date_str}"
@@ -106,19 +99,11 @@ def parse_services(html):
 def main():
     session = requests.Session()
     try:
-        print("Starte Login...")
         login(session)
-        print("Login erfolgreich!")
-        
         html = session.get(BASE_URL).text
         current = parse_services(html)
         
-        if not current:
-            print("Parser hat keine Dienste gefunden. Speichere Debug-Seite...")
-            with open(os.path.join(BASE_PATH, "debug_page.html"), "w", encoding="utf-8") as f:
-                f.write(html)
-            # Hier beenden wir nicht, damit der Code weiterläuft
-        
+        # Sicherstellen, dass wir eine Liste haben, auch wenn leer
         old = json.load(open(CHECKPOINT_FILE)) if os.path.exists(CHECKPOINT_FILE) else []
         
         if current != old:
@@ -126,15 +111,16 @@ def main():
                 if item not in old:
                     details = get_service_details(session, "2026-05-29", item['id'])
                     msg = f"🔔 Neuer Dienst {item['id']}\n📅 {item['day']}.05.2026\n⏰ {item['time']}\n\n{details}"
-                    requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers={"Click": create_calendar_link(item)})
+                    requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"))
             
             with open(CHECKPOINT_FILE, "w") as f:
                 json.dump(current, f, indent=2)
-            print("checkpoint.json wurde erfolgreich geschrieben.")
+            print("Checkpoint gespeichert.")
         else:
             print("Keine Änderungen.")
             
     except Exception as e:
         print(f"KRITISCHER FEHLER: {e}")
-        # Wichtig: Falls der Login fehlgeschlagen ist, schreib uns, warum
-        print("Stelle sicher, dass RNV_USER und RNV_PASS in den GitHub Secrets korrekt sind.")
+
+if __name__ == "__main__":
+    main()
