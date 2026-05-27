@@ -64,8 +64,27 @@ def create_calendar_link(service):
         return "https://google.com"
         
 def get_service_details(session, date_str, service_id):
-    # Die URL zur Detailseite des Dienstes
-    url = f"{BASE_URL}/shift.aspx?date={date_str}" 
+    # 1. Wir müssen erst die Roster-Seite "aufrufen", damit die Session weiß, 
+    # dass wir in der Dienstplan-Ansicht sind.
+    session.get(ROSTER_URL)
+    
+    # 2. Um den Tag/Dienst zu "klicken", müssen wir oft die hidden fields 
+    # der Roster-Seite mitsenden, damit das System weiß, welcher Tag gemeint ist.
+    # Da die RNV-Seite wahrscheinlich mit __EVENTTARGET arbeitet:
+    # (Dies ist der Teil, der im Browser beim Klicken passiert)
+    payload = {
+        "__EVENTTARGET": "ctl00$cntMainBody$calRoster", # Das ist der Kalender-Control-Name
+        "__EVENTARGUMENT": date_str,                   # Hier wird das Datum übergeben
+        # Manchmal müssen hier noch andere __VIEWSTATE Felder mit, 
+        # die wir von der Roster-Seite auslesen müssten.
+    }
+    
+    # Klick simulieren
+    session.post(ROSTER_URL, data=payload)
+    
+    # 3. Jetzt erst die Detailseite aufrufen
+    resp = session.get(f"{BASE_URL}/shift.aspx")
+    soup = BeautifulSoup(resp.text, "html.parser")
     resp = session.get(url)
     soup = BeautifulSoup(resp.text, "html.parser")
     table = soup.find("table", {"id": "ctl00_cntMainBody_lstDienstinfo"})
