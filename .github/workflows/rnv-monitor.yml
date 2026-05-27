@@ -35,5 +35,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Wir prüfen, ob die Datei existiert, bevor wir sie hinzufügen
+          if [ -f "checkpoint.json" ]; then
+            git add checkpoint.json
+            # Commit nur, wenn es Änderungen gibt
+            git diff --quiet && git diff --staged --quiet || (git commit -m "Update RNV Dienstplan" && git push)
+          else
+            echo "Keine checkpoint.json gefunden, überspringe Commit."
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add checkpoint.json
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update RNV Dienstplan" && git push)
