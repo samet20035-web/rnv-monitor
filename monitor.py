@@ -86,7 +86,6 @@ def notify(message):
             headers={
                 "Title": "Perdis",           # Das ist der entscheidende Teil für dein iPhone
                 "Priority": "high",          # Sorgt für eine sofortige Benachrichtigung
-                "Tags": "train,calendar"     # Zeigt passende Icons an
             }
         )
 from datetime import datetime
