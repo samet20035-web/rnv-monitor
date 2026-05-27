@@ -16,9 +16,18 @@ BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 
 def login(session: requests.Session):
-    headers = {"User-Agent": "Mozilla/5.0", "Referer": LOGIN_URL, "Content-Type": "application/x-www-form-urlencoded"}
+   headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Referer": LOGIN_URL,
+    "Content-Type": "application/x-www-form-urlencoded"
+}
     r = session.get(LOGIN_URL, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
+    # Prüfen, ob Viewstate überhaupt gefunden wurde
+    viewstate = soup.find("input", {"name": "__VIEWSTATE"})
+        if not viewstate:
+        print("DEBUG: Viewstate nicht gefunden! HTML-Inhalt:")
+        print(r.text[:500]) # Gibt die ersten 500 Zeichen der Seite aus
     
     def get_input(name):
         tag = soup.find("input", {"name": name})
