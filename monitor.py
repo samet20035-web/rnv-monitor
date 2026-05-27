@@ -69,10 +69,26 @@ def parse_services(html: str):
             services.append({"day": day, "time": time_val, "id": dienst_id})
     return services
 
+def format_message(change_type, service):
+    # change_type ist z.B. "Neuer Dienst" oder "Dienständerung"
+    # service ist das Dictionary mit den Daten
+    msg = (f"🔔 {change_type}\n"
+           f"📅 Tag: {service['day']}.05.2026\n"
+           f"⏰ Zeit: {service['time']}\n"
+           f"🆔 Dienstnummer: {service['id']}")
+    return msg
+
 def notify(message):
     if NTFY_TOPIC:
-        requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=message.encode("utf-8"))
-
+        requests.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}", 
+            data=message.encode("utf-8"),
+            headers={
+                "Title": "Perdis",           # Das ist der entscheidende Teil für dein iPhone
+                "Priority": "high",          # Sorgt für eine sofortige Benachrichtigung
+                "Tags": "train,calendar"     # Zeigt passende Icons an
+            }
+        )
 from datetime import datetime
 
 def main():
@@ -97,12 +113,16 @@ def main():
             except:
                 old = []
 
-    # 2. Vergleichen und speichern
+# 2. Vergleichen und speichern
     if current != old:
-        print("Änderung erkannt!")
-        if old: # Nur benachrichtigen, wenn schon ein alter Stand existierte
-            notify("Dienstplan wurde aktualisiert.")
+        # Hier prüfen wir, ob ein neuer Dienst hinzugekommen ist
+        for item in current:
+            if item not in old:
+                msg = format_message("Neuer Dienst", item)
+                notify(msg)
+                print(f"Push gesendet: {msg}")
         
+        # Speichern für den nächsten Vergleich
         with open("checkpoint.json", "w") as f:
             json.dump(current, f, indent=2)
     else:
