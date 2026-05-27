@@ -2,6 +2,28 @@ import os
 import requests
 from bs4 import BeautifulSoup
 import json
+import urllib.parse
+
+def create_calendar_link(service):
+    # Hier nehmen wir an, dein 'time'-String sieht immer so aus: "08:30 - 16:45"
+    start_zeit, ende_zeit = service['time'].split("-")
+    start_zeit = start_zeit.strip().replace(":", "") + "00"
+    ende_zeit = ende_zeit.strip().replace(":", "") + "00"
+    
+    # Datum festlegen (29.05.2026)
+    datum = "20260529T" 
+    
+    title = f"Straßenbahn Dienst {service['id']} (Samet)"
+    details = f"Beginn: {service['time'].split('-')[0].strip()}\\nEnde: {service['time'].split('-')[1].strip()}"
+    
+    base_url = "https://www.google.com/calendar/render?action=TEMPLATE"
+    params = {
+        "text": title,
+        "dates": f"{datum}{start_zeit}Z/{datum}{ende_zeit}Z",
+        "details": details,
+        "location": "RNV Betriebshof"
+    }
+    return f"{base_url}&{urllib.parse.urlencode(params)}"
 
 # Konfiguration
 BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm/roster.aspx"
@@ -78,14 +100,22 @@ def format_message(change_type, service):
            f"🆔 Dienstnummer: {service['id']}")
     return msg
 
-def notify(message):
+def notify(service):
     if NTFY_TOPIC:
+        link = create_calendar_link(service)
+        msg = (f"🔔 Neuer Dienst\n"
+               f"📅 Tag: {service['day']}.05.2026\n"
+               f"⏰ Zeit: {service['time']}\n"
+               f"🆔 Dienstnummer: {service['id']}\n\n"
+               f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!")
+        
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}", 
-            data=message.encode("utf-8"),
+            data=msg.encode("utf-8"),
             headers={
-                "Title": "Perdis",           # Das ist der entscheidende Teil für dein iPhone
-                "Priority": "high",          # Sorgt für eine sofortige Benachrichtigung
+                "Title": "Perdis",
+                "Priority": "high",
+                "Click": link  # <--- Das ist der "Knopf" (Tippen öffnet Kalender)
             }
         )
 from datetime import datetime
