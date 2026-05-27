@@ -36,10 +36,15 @@ def login(session: requests.Session):
         "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
         "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton": "Anmelden"
     }
+    
     r2 = session.post(LOGIN_URL, data=payload, headers=headers)
+    
+    # DEBUG: Wenn Login fehlschlägt, den Inhalt der Antwort speichern
     if not ("logout" in r2.text.lower() or "abmelden" in r2.text.lower() or "Dienstplan" in r2.text):
-        raise Exception("Login fehlgeschlagen.")
-
+        with open(os.path.join(BASE_PATH, "login_error.html"), "w", encoding="utf-8") as f:
+            f.write(r2.text)
+        raise Exception(f"Login fehlgeschlagen! Status: {r2.status_code}. (Siehe login_error.html)")
+        
 def get_service_details(session, date_str, service_id):
     url = f"https://fahrerauskunft.rnv-online.de/WebComm/shift.aspx?{date_str}"
     resp = session.get(url)
