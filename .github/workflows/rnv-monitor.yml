@@ -30,8 +30,10 @@ jobs:
           RNV_USER: ${{ secrets.RNV_USER }}
           RNV_PASS: ${{ secrets.RNV_PASS }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        run: python monitor.py
-
+        run: |
+          ls -la  # <--- FÜGE DIESE ZEILE EIN!
+          python monitor.py
+          
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
