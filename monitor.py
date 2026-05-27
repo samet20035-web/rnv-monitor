@@ -4,42 +4,38 @@ from bs4 import BeautifulSoup
 import json
 import urllib.parse
 
-# --- KONFIGURATION ---
 BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm/roster.aspx"
 LOGIN_URL = "https://fahrerauskunft.rnv-online.de/WebComm/default.aspx"
+# WICHTIG: Die URL mit dem Cookie-Parameter für den ersten Aufruf
+START_URL = "https://fahrerauskunft.rnv-online.de/WebComm/default.aspx?TestingCookie=1"
+
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "DEIN_TOPIC")
 USERNAME = os.getenv("RNV_USER", "DEIN_USER")
 PASSWORD = os.getenv("RNV_PASS", "DEIN_PASS")
 
-# Pfad zur Datei immer im selben Ordner wie das Skript
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
-
-import time
 
 def login(session: requests.Session):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Referer": LOGIN_URL,
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Referer": START_URL
     }
     
-    # Versuche es bis zu 5 Mal, falls die Seite nicht sofort lädt
+    # 1. Erst den Start-URL-Aufruf (mit Cookie-Parameter)
+    session.get(START_URL, headers=headers)
+    time.sleep(1) # Kurze Pause nach dem Cookie-Setzen
+
+    # 2. Jetzt die echte Login-Seite laden
     for attempt in range(5):
         r = session.get(LOGIN_URL, headers=headers)
         soup = BeautifulSoup(r.text, "html.parser")
-        
-        # Prüfe, ob wir ein Login-Formular sehen
         if soup.find("input", {"name": "__VIEWSTATE"}):
-            print(f"Login-Seite nach {attempt+1} Versuch(en) erfolgreich geladen.")
             break
-        else:
-            print(f"Versuch {attempt+1}: Login-Seite noch nicht bereit, warte 2 Sekunden...")
-            time.sleep(2)
+        time.sleep(2)
     else:
-        raise Exception("Login-Seite konnte auch nach 5 Versuchen nicht geladen werden.")
+        raise Exception("Login-Seite nach 5 Versuchen nicht geladen.")
 
-    # Ab hier geht der Login weiter...
     def get_input(name):
         tag = soup.find("input", {"name": name})
         return tag["value"] if tag and tag.has_attr("value") else ""
@@ -52,9 +48,11 @@ def login(session: requests.Session):
         "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
         "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton": "Anmelden"
     }
-    r2 = session.post(LOGIN_URL, data=payload, headers=headers)
     
+    r2 = session.post(LOGIN_URL, data=payload, headers=headers)
     if not ("logout" in r2.text.lower() or "abmelden" in r2.text.lower() or "Dienstplan" in r2.text):
+        raise Exception("Login fehlgeschlagen.")
+    
         # Hier speichern wir den Fehler, um ihn in den Artifacts zu sehen
         with open(os.path.join(BASE_PATH, "login_error.html"), "w", encoding="utf-8") as f:
             f.write(r2.text)
