@@ -46,10 +46,13 @@ def login(session: requests.Session):
     
     r2 = session.post(LOGIN_URL, data=payload, headers=headers)
     
+print(f"DEBUG: Status Code nach Login: {r2.status_code}")
+    # Speichere IMMER, egal ob Login Erfolg oder nicht, damit wir sehen was passiert
+    with open(os.path.join(BASE_PATH, "debug_login_response.html"), "w", encoding="utf-8") as f:
+        f.write(r2.text)
+    
     if not ("logout" in r2.text.lower() or "abmelden" in r2.text.lower() or "Dienstplan" in r2.text):
-        with open(os.path.join(BASE_PATH, "login_error.html"), "w", encoding="utf-8") as f:
-            f.write(r2.text)
-        raise Exception("Login fehlgeschlagen. Siehe login_error.html im Artifact-Ordner.")
+        raise Exception("Login fehlgeschlagen.")
         
 def get_service_details(session, date_str, service_id):
     url = f"https://fahrerauskunft.rnv-online.de/WebComm/shift.aspx?{date_str}"
