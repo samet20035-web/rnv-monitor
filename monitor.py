@@ -136,9 +136,15 @@ def main():
         
         old = json.load(open(CHECKPOINT_FILE)) if os.path.exists(CHECKPOINT_FILE) else []
 
-        # Wenn die Datei existiert aber leer ist, löschen wir sie, damit sie neu geschrieben wird
-        if os.path.exists(CHECKPOINT_FILE) and os.path.getsize(CHECKPOINT_FILE) == 0:
-            os.remove(CHECKPOINT_FILE)
+        # Robusteres Laden des Checkpoints
+        old = []
+        if os.path.exists(CHECKPOINT_FILE):
+            try:
+                with open(CHECKPOINT_FILE, "r") as f:
+                    old = json.load(f)
+            except (json.JSONDecodeError, ValueError):
+                print("Warnung: Checkpoint-Datei war korrupt, erstelle neue Liste.")
+                old = [] # Bei Fehler einfach als leere Liste starten
             
         if current != old:
             for item in current:
