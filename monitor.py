@@ -135,7 +135,11 @@ def main():
         current = parse_services(html)
         
         old = json.load(open(CHECKPOINT_FILE)) if os.path.exists(CHECKPOINT_FILE) else []
-        
+
+        # Wenn die Datei existiert aber leer ist, löschen wir sie, damit sie neu geschrieben wird
+        if os.path.exists(CHECKPOINT_FILE) and os.path.getsize(CHECKPOINT_FILE) == 0:
+            os.remove(CHECKPOINT_FILE)
+            
         if current != old:
             for item in current:
               if item not in old:
