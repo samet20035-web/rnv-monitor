@@ -47,7 +47,7 @@ def login(session: requests.Session):
     if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
         raise Exception("Login fehlgeschlagen.")
 
-def create_calendar_link(service, details, date_str):
+def create_calendar_link(service, details, date_str=None):
     s, e = service['time'].split("-")
     s_zeit = s.strip().replace(":", "") + "00"
     e_zeit = e.strip().replace(":", "") + "00"
@@ -144,7 +144,7 @@ def main():
                        f"👉 Tippe hier, um den Dienst zum Kalender hinzuzufügen!")
     
                 # 3. Kalender-Link (hier kannst du 'details' auch in die Parameter aufnehmen)
-                headers = {"Click": create_calendar_link(item, details)}
+                headers = {"Click": create_calendar_link(item, details, "2026-05-29")}
                 requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
             
             with open(CHECKPOINT_FILE, "w") as f:
