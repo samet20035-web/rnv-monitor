@@ -121,66 +121,42 @@ def notify(service):
 from datetime import datetime
 
 def main():
+    # 1. Session starten und Dienste abrufen
     session = requests.Session()
     login(session)
     html = session.get(BASE_URL).text
     current = parse_services(html)
     
-    # --- TEST-TRIGGER FÜR FREITAGS-DIENST ---
-    # Wir simulieren einen Dienst für Freitag, den 29.05.2026
-    test_dienst = {
-        "day": "29", 
-        "time": "08:30 - 16:45", 
-        "id": "2061036"
-    }
-    
-    # Nachricht formatieren und senden
-    msg = (f"🔔 Neuer Dienst\n"
-           f"📅 Tag: {test_dienst['day']}.05.2026\n"
-           f"⏰ Zeit: {test_dienst['time']}\n"
-           f"🆔 Dienstnummer: {test_dienst['id']}")
-    
-    notify(msg)
+    # --- TEST-TRIGGER (Einmalig für dich) ---
+    # Wir benutzen das Test-Objekt so, wie es die Funktion 'notify' erwartet
+    test_dienst = {"day": "29", "time": "08:30 - 16:45", "id": "2061036"}
+    notify(test_dienst) # Hier wird der Link generiert!
     print("Test-Nachricht für Freitag wurde gesendet.")
     # ----------------------------------------
 
-    # Danach der normale Ablauf...
-    # (Rest deines Codes wie gehabt)
-    # Zeitprüfung: Nur zwischen 07:00 und 20:00 Uhr ausführen
+    # 2. Zeitprüfung für den regulären Betrieb
     now = datetime.now().hour
     if not (7 <= now < 20):
         print(f"Außerhalb der Arbeitszeit ({now} Uhr). Beende Skript.")
         return
 
-    session = requests.Session()
-    login(session)
-    html = session.get(BASE_URL).text
-    current = parse_services(html)
-
-    old = []
-    # 1. Altes Ergebnis laden
+    # 3. Altes Ergebnis laden
     old = []
     if os.path.exists("checkpoint.json"):
         with open("checkpoint.json", "r") as f:
-            try:
-                old = json.load(f)
-            except:
-                old = []
+            try: old = json.load(f)
+            except: old = []
 
-# 2. Vergleichen und speichern
+    # 4. Vergleichen und speichern
     if current != old:
-        # Hier prüfen wir, ob ein neuer Dienst hinzugekommen ist
+        print("Änderung erkannt!")
         for item in current:
             if item not in old:
-                msg = format_message("Neuer Dienst", item)
-                notify(msg)
-                print(f"Push gesendet: {msg}")
+                # Hier rufen wir notify(item) auf, damit der Kalender-Link entsteht
+                notify(item) 
+                print(f"Push gesendet für Dienst: {item['id']}")
         
-        # Speichern für den nächsten Vergleich
         with open("checkpoint.json", "w") as f:
             json.dump(current, f, indent=2)
     else:
         print("Keine Änderungen.")
-
-if __name__ == "__main__":
-    main()
