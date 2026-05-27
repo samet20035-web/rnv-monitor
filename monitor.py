@@ -47,20 +47,18 @@ def login(session: requests.Session):
     if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
         raise Exception("Login fehlgeschlagen.")
 
-def create_calendar_link(service, details):
-    try:
-        s, e = service['time'].split("-")
-        s_zeit = s.strip().replace(":", "") + "00"
-        e_zeit = e.strip().replace(":", "") + "00"
-        params = {
-            "text": f"Dienst {service['id']}",
-            "dates": f"20260529T{s_zeit}/20260529T{e_zeit}",
-            "details": details, 
-            "location": "RNV"
-        }
-        return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
-    except:
-        return "https://google.com"
+def create_calendar_link(service, details, date_str):
+    s, e = service['time'].split("-")
+    s_zeit = s.strip().replace(":", "") + "00"
+    e_zeit = e.strip().replace(":", "") + "00"
+    date_compact = date_str.replace("-", "")
+    params = {
+        "text": f"Dienst {service['id']}",
+        "dates": f"{date_compact}T{s_zeit}/{date_compact}T{e_zeit}",
+        "details": details,
+        "location": "RNV"
+    }
+    return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
         
 def get_service_details(session, date_str, service_id):
     # Roster aufrufen für Session-State
@@ -146,7 +144,7 @@ def main():
                        f"👉 Tippe hier, um den Dienst zum Kalender hinzuzufügen!")
     
                 # 3. Kalender-Link (hier kannst du 'details' auch in die Parameter aufnehmen)
-                headers = {"Click": create_calendar_link(item)} # Hier könntest du noch details als Parameter übergeben
+                headers = {"Click": create_calendar_link(item, details)}
                 requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
             
             with open(CHECKPOINT_FILE, "w") as f:
