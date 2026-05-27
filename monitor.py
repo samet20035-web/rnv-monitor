@@ -85,9 +85,18 @@ def parse_services(html: str):
         if "Dienst:" in title and "abwesend" not in title:
             strong = td.find("strong")
             day = strong.get_text(strip=True)[:2]
+            
+            # Hier der Fix: Wir holen die Zeit sauber aus dem Span
             span = td.find("span")
             time_val = span.get_text(strip=True) if span else ""
+            
+            # Dienst-ID extrahieren
             dienst_id = title.split("Dienst:")[1].split("•")[0].strip()
+            
+            # WICHTIG: Wenn die ID in der Zeit steht, entfernen wir sie
+            if dienst_id in time_val:
+                time_val = time_val.replace(dienst_id, "").strip()
+                
             services.append({"day": day, "time": time_val, "id": dienst_id})
     return services
 
