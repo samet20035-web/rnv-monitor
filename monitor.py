@@ -121,24 +121,38 @@ def notify(service):
 from datetime import datetime
 
 def main():
-    # 1. Session starten und Dienste abrufen
-    session = requests.Session()
-    login(session)
-    html = session.get(BASE_URL).text
-    current = parse_services(html)
-    
-    # --- TEST-TRIGGER (Einmalig für dich) ---
-    # Wir benutzen das Test-Objekt so, wie es die Funktion 'notify' erwartet
-    test_dienst = {"day": "29", "time": "08:30 - 16:45", "id": "2061036"}
-    notify(test_dienst) # Hier wird der Link generiert!
-    print("Test-Nachricht für Freitag wurde gesendet.")
-    # ----------------------------------------
-
-    # 2. Zeitprüfung für den regulären Betrieb
+    # Zeitprüfung: Nur zwischen 07:00 und 20:00 Uhr ausführen
     now = datetime.now().hour
     if not (7 <= now < 20):
         print(f"Außerhalb der Arbeitszeit ({now} Uhr). Beende Skript.")
         return
+
+    session = requests.Session()
+    login(session)
+    html = session.get(BASE_URL).text
+    current = parse_services(html)
+
+    # 1. Altes Ergebnis laden
+    old = []
+    if os.path.exists("checkpoint.json"):
+        with open("checkpoint.json", "r") as f:
+            try: old = json.load(f)
+            except: old = []
+
+    # 2. Vergleichen und speichern
+    if current != old:
+        print("Änderung erkannt!")
+        for item in current:
+            # Benachrichtige nur, wenn es ein wirklich neuer oder geänderter Dienst ist
+            if item not in old:
+                notify(item) # Hier wird jetzt direkt der Kalender-Link generiert
+                print(f"Push gesendet für Dienst: {item['id']}")
+        
+        # Speichern für den nächsten Vergleich
+        with open("checkpoint.json", "w") as f:
+            json.dump(current, f, indent=2)
+    else:
+        print("Keine Änderungen.")
 
     # 3. Altes Ergebnis laden
     old = []
