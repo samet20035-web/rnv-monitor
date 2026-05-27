@@ -88,15 +88,18 @@ def parse_services(html):
 def main():
     session = requests.Session()
     try:
+        print("Starte Login...")
         login(session)
+        print("Login erfolgreich!")
+        
         html = session.get(BASE_URL).text
         current = parse_services(html)
         
-        # Debugging falls keine Dienste gefunden werden
         if not current:
+            print("Parser hat keine Dienste gefunden. Speichere Debug-Seite...")
             with open(os.path.join(BASE_PATH, "debug_page.html"), "w", encoding="utf-8") as f:
                 f.write(html)
-            print("Keine Dienste gefunden! debug_page.html wurde erstellt.")
+            # Hier beenden wir nicht, damit der Code weiterläuft
         
         old = json.load(open(CHECKPOINT_FILE)) if os.path.exists(CHECKPOINT_FILE) else []
         
@@ -109,11 +112,11 @@ def main():
             
             with open(CHECKPOINT_FILE, "w") as f:
                 json.dump(current, f, indent=2)
-            print("Änderungen verarbeitet und gespeichert.")
+            print("checkpoint.json wurde erfolgreich geschrieben.")
         else:
             print("Keine Änderungen.")
+            
     except Exception as e:
-        print(f"Fehler aufgetreten: {e}")
-
-if __name__ == "__main__":
-    main()
+        print(f"KRITISCHER FEHLER: {e}")
+        # Wichtig: Falls der Login fehlgeschlagen ist, schreib uns, warum
+        print("Stelle sicher, dass RNV_USER und RNV_PASS in den GitHub Secrets korrekt sind.")
