@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4
 
-      - name: Run monitor
+- name: Run monitor
         env:
           RNV_USER: ${{ secrets.RNV_USER }}
           RNV_PASS: ${{ secrets.RNV_PASS }}
