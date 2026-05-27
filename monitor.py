@@ -123,7 +123,7 @@ from datetime import datetime
 def main():
     # Zeitprüfung: Nur zwischen 07:00 und 20:00 Uhr ausführen
     now = datetime.now().hour
-    if not (7 <= now < 20):
+    if not (7 <= now < 24):
         print(f"Außerhalb der Arbeitszeit ({now} Uhr). Beende Skript.")
         return
 
