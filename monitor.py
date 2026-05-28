@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import json
 import urllib.parse
 import time
+from datetime import datetime
 
 # --- KONFIGURATION ---
 BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm"
@@ -18,6 +19,8 @@ MEIN_NAME = "Samet"  # Dein Name für den Titel
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
+
+WOCHENTAG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 def get_hidden_fields(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
@@ -54,9 +57,18 @@ def create_calendar_link(service, details, date_str=None):
         if date_str is None:
             date_str = "2026-05-29"
         
-        s, e = service['time'].strip().split("-")
-        s_zeit = s.strip().replace(":", "") + "00"
-        e_zeit = e.strip().replace(":", "") + "00"
+        # Zeitbereich zusammenfassen (z.B. 14-16 Uhr statt 14-15 + 15-16)
+        time_str = service['time'].strip()
+        time_str = time_str.replace("–", "-").replace("—", "-")
+        parts = time_str.split("-")
+        if len(parts) < 2:
+            return "https://google.com"
+        
+        start_time = parts[0].strip()
+        end_time = parts[-1].strip()  # Letzter Wert = Ende aller Pausen
+        
+        s_zeit = start_time.replace(":", "") + "00"
+        e_zeit = end_time.replace(":", "") + "00"
         
         date_compact = date_str.replace("-", "")
         
@@ -104,24 +116,46 @@ def get_service_details(session, date_str, service_id):
     tds_end = end_row.find_all("td")
     
     start_zeit = tds_start[1].text.strip() if len(tds_start) > 1 else "-"
-    start_ort = tds_start[2].text.strip() if len(tds_start) > 2 else "-"
+    start_ort_raw = tds_start[2].text.strip() if len(tds_start) > 2 else "-"
     end_zeit = tds_end[3].text.strip() if len(tds_end) > 3 else "-"
-    end_ort = tds_end[4].text.strip() if len(tds_end) > 4 else "-"
+    end_ort_raw = tds_end[4].text.strip() if len(tds_end) > 4 else "-"
     
+    # Ort anpassen: Bth. Betriebshof → Betriebshof (Ausrücken) / (Einrücken)
+    def adapt_ort(ort, typ):
+        ort_clean = ort.replace("Bth. HD Bergheim", "").replace("Betriebshof", "").strip()
+        if "Betriebshof" in ort or "Bth" in ort:
+            if typ == "start":
+                return f"Betriebshof (Ausrücken)"
+            else:
+                return f"Betriebshof (Einrücken)"
+        return ort
+    
+    start_ort = adapt_ort(start_ort_raw, "start")
+    end_ort = adapt_ort(end_ort_raw, "end")
+
+    # Pausen sammeln
     pausen = []
     for r in dienst_rows:
         tds = r.find_all("td")
-        if len(tds) > 9 and "Pause" in tds[9].text:
+        if len(tds) > 9 and ("Pause" in tds[9].text or "pause" in tds[9].text.lower()):
             pause_von = tds[1].text.strip() if len(tds) > 1 else "-"
             pause_bis = tds[3].text.strip() if len(tds) > 3 else "-"
-            pause_art = tds[9].text.strip()
-            pausen.append(f"- {pause_von} bis {pause_bis} ({pause_art})")
+            pausen.append((pause_von, pause_bis))
     
-    pausen_str = "\n".join(pausen) if pausen else "Keine Pausen"
+    # Pausen formatieren: bei mehreren 1. Pause, 2. Pause, ...
+    pausen_str = ""
+    if pausen:
+        # Wenn nur eine Pause: einfach "1. Pause: ..."
+        # Wenn mehrere: jede Pause durchnummerieren
+        for i, (von, bis) in enumerate(pausen, 1):
+            pausen_str += f"{i}. Pause: {von} - {bis} Uhr\n"
+        pausen_str = pausen_str.rstrip("\n")
+    else:
+        pausen_str = "Keine Pausen"
 
-    return (f"Beginn: {start_zeit} – {start_ort}\n"
-            f"Pausen:\n{pausen_str}\n"
-            f"Ende: {end_zeit} – {end_ort}")
+    return (f"Beginn: {start_zeit} Uhr ({start_ort})\n"
+            f"{pausen_str}\n"
+            f"Ende: {end_zeit} Uhr ({end_ort})")
 
 def parse_services(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -160,13 +194,19 @@ def main():
                     # Datum aus dem Tag berechnen
                     service_date = f"2026-05-{item['day']}"
                     
+                    # Wochentag bestimmen (0=Montag, 4=Freitag, etc.)
+                    day_num = int(item['day']) - 1  # 1 = 29.05.2026 = Freitag = index 4
+                    # Alternativ korrekt berechnen:
+                    date_obj = datetime(2026, 5, day_num + 1)
+                    wochentag = WOCHENTAG[date_obj.weekday()]
+                    
                     # Details abrufen
                     details = get_service_details(session, service_date, item['id'])
         
-                    # Nachrichtenaufbau wie gewünscht
+                    # Nachrichtenaufbau mit Wochentag
                     msg = (
                         f"Neuer Dienst {item['id']}\n"
-                        f"📅 Tag: {item['day']}.05.2026\n"
+                        f"📅 {wochentag}, {item['day']}.05.2026\n"
                         f"⏰ Zeit: {item['time']}\n"
                         f"🆔 Dienstnummer: {item['id']}\n\n"
                         f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
