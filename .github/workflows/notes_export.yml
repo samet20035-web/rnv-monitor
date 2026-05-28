@@ -1,0 +1,48 @@
+name: RNV Notes Export
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "10/15 6-17 * * *"
+
+jobs:
+  notes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run notes export
+        env:
+          RNV_USER: ${{ secrets.RNV_USER }}
+          RNV_PASS: ${{ secrets.RNV_PASS }}
+        run: python notes_export.py
+
+      - name: Commit notes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [ -d "notes" ]; then
+            git add notes/*.txt
+          fi
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Update daily notes export"
+            git push
+          else
+            echo "Keine Änderungen zum Committen gefunden."
+          fi
