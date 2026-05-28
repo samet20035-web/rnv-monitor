@@ -252,17 +252,19 @@ def main():
             }
             requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
 
+        # ICS Datei generieren und schreiben
         ics_data = generate_ics(current, session)
-            with open(ICS_FILE, "w", encoding="utf-8") as f:
-                f.write(ics_data)
-            print("ICS-Datei aktualisiert.")
+        with open(ICS_FILE, "w", encoding="utf-8") as f:
+            f.write(ics_data)
+        print("ICS-Datei aktualisiert.")
 
-            with open(CHECKPOINT_FILE, "w") as f:
-                json.dump(current, f, indent=2)
-            print("Checkpoint gespeichert.")
+        # Checkpoint speichern
+        with open(CHECKPOINT_FILE, "w") as f:
+            json.dump(current, f, indent=2)
+        print("Checkpoint gespeichert.")
 
-        except Exception as e:
-            print(f"KRITISCHER FEHLER: {e}")
+    except Exception as e:
+        print(f"KRITISCHER FEHLER: {e}")
 
 if __name__ == "__main__":
     main()
