@@ -1,29 +1,16 @@
-import os
-import json
-from datetime import datetime
+import re
 from collections import defaultdict
 
-import requests
-from bs4 import BeautifulSoup
+# -----------------------------
+# KONFIG
+# -----------------------------
 
-BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm"
-LOGIN_URL = f"{BASE_URL}/default.aspx"
-ROSTER_URL = f"{BASE_URL}/roster.aspx"
-START_URL = f"{LOGIN_URL}?TestingCookie=1"
-
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))
-CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
-NOTES_DIR = os.path.join(BASE_PATH, "notes")
-
-WOCHENTAG_KURZ = {
-    0: "Mo",
-    1: "Di",
-    2: "Mi",
-    3: "Do",
-    4: "Fr",
-    5: "Sa",
-    6: "So",
-}
+SKIP_KEYWORDS = [
+    "Betriebshof",
+    "BH HD",
+    "BHD",
+    "BTH",
+]
 
 STOP_MAP = {
     "Bth. HD Betriebshof": "BHBE",
@@ -39,241 +26,156 @@ STOP_MAP = {
     "Heiligenbergschule": "HHHS",
 }
 
-SPECIAL_START_CODES = {"BHBH", "BHBE"}
-KEY_END_CODES = {"BHBP", "BHHF", "RSRS", "KHFH", "LHFH", "EHKS", "HHHT", "HHHS", "BHBH", "BHBE"}
+
+DAYS_MAP = {
+    "Mo": "Mo",
+    "Di": "Di",
+    "Mi": "Mi",
+    "Do": "Do",
+    "Fr": "Fr",
+    "Sa": "Sa",
+    "So": "So",
+}
 
 
-def load_checkpoint():
-    if not os.path.exists(CHECKPOINT_FILE):
-        return []
-    with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+# -----------------------------
+# HILFSFUNKTIONEN
+# -----------------------------
+
+def clean_stop(code: str) -> str:
+    return STOP_MAP.get(code.strip(), code.strip())
 
 
-def get_hidden_fields(html: str) -> dict:
-    soup = BeautifulSoup(html, "html.parser")
+def is_skip(line: str) -> bool:
+    return any(k.lower() in line.lower() for k in SKIP_KEYWORDS)
+
+
+def parse_header(line: str):
+    """
+    Fr, 29.05.26   2061033
+    """
+    m = re.match(r"^(Mo|Di|Mi|Do|Fr|Sa|So),\s*([\d.]+)\s+(\d+)", line)
+    if not m:
+        return None
+    return f"{m.group(1)}, {m.group(2)}   {m.group(3)}"
+
+
+def parse_trip(line: str):
+    """
+    BHBH  07:41  26 KHFH
+    """
+    m = re.match(r"^(\w+)\s+(\d{1,2}:\d{2})\s+(\d+)\s+(\w+)", line)
+    if not m:
+        return None
+
     return {
-        inp.get("name"): inp.get("value", "")
-        for inp in soup.find_all("input", type="hidden")
-        if inp.get("name")
+        "from": clean_stop(m.group(1)),
+        "time": m.group(2),
+        "line": m.group(3),
+        "to": clean_stop(m.group(4)),
+        "raw_from": m.group(1),
+        "raw_to": m.group(4),
     }
 
 
-def login(session: requests.Session, username: str, password: str):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Origin": "https://fahrerauskunft.rnv-online.de",
-        "Referer": LOGIN_URL,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-
-    session.get(START_URL, headers=headers)
-    r = session.get(LOGIN_URL, headers=headers)
-    hidden = get_hidden_fields(r.text)
-
-    payload = {
-        **hidden,
-        "__EVENTTARGET": "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton",
-        "ctl00$cntMainBody$lgnView$lgnLogin$UserName": username,
-        "ctl00$cntMainBody$lgnView$lgnLogin$Password": password,
-    }
-
-    r2 = session.post(LOGIN_URL, data=payload, headers=headers)
-
-    if r2.status_code == 500:
-        raise Exception("RNV hat mit 500 geantwortet.")
-
-    if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
-        raise Exception("Login fehlgeschlagen.")
-
-
-def code_stop(name: str) -> str:
-    raw = (name or "").replace("\xa0", " ").strip()
-
-    if not raw:
-        return ""
-
-    for needle, code in STOP_MAP.items():
-        if needle in raw:
-            return code
-
-    return raw
-
-
-def is_service_row(row: dict) -> bool:
-    art = (row["art"] or "").lower()
-    line = (row["line"] or "").strip()
-
-    if "pause" in art:
-        return False
-    if "wegezeit" in art:
-        return False
-    if not line.isdigit():
-        return False
-
-    return True
-
-
-def parse_shift_rows(session: requests.Session, date_str: str, service_id: str):
-    resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}")
-    soup = BeautifulSoup(resp.text, "html.parser")
-    table = soup.find("table", {"id": "ctl00_cntMainBody_lstDienstinfo"})
-
-    if not table:
-        return []
-
-    rows = []
-    for tr in table.find_all("tr"):
-        tds = tr.find_all("td")
-        if len(tds) < 10:
-            continue
-
-        cells = [td.get_text(" ", strip=True).replace("\xa0", " ").strip() for td in tds]
-
-        if not cells[0] or cells[0] != service_id:
-            continue
-
-        rows.append({
-            "dienst": cells[0],
-            "start_time": cells[1],
-            "start_stop": cells[2],
-            "end_time": cells[3],
-            "end_stop": cells[4],
-            "line": cells[6],
-            "umlauf": cells[8],
-            "art": cells[9],
-        })
-
-    return rows
-
-
-def split_segments(rows: list[dict]) -> list[list[dict]]:
-    segments = []
-    current = []
-
-    for row in rows:
-        if is_service_row(row):
-            current.append(row)
-        else:
-            if current:
-                segments.append(current)
-                current = []
-
-    if current:
-        segments.append(current)
-
-    return segments
-
-
-def choose_display_point(row: dict, is_first_in_segment: bool) -> tuple[str, str]:
+def parse_umlauf(line: str):
     """
-    Rückgabe:
-    - Haltestellenkürzel
-    - Uhrzeit
+    => 2657
     """
-    start_code = code_stop(row["start_stop"])
-    end_code = code_stop(row["end_stop"])
-
-    # Deine gewünschte Logik:
-    # - Wenn Start/Betriebshof-Ausgang: Start zeigen
-    # - sonst, wenn Ziel ein wichtiger Punkt ist: Ziel zeigen
-    # - sonst Start zeigen
-    if start_code in SPECIAL_START_CODES:
-        return start_code, row["start_time"]
-
-    if end_code in KEY_END_CODES:
-        return end_code, row["end_time"]
-
-    return start_code, row["start_time"]
+    m = re.match(r"^\s*=>\s*(\d+)", line)
+    if not m:
+        return None
+    return m.group(1)
 
 
-def format_day_file(date_obj: datetime, dienst: str, rows: list[dict]) -> str:
-    wd = WOCHENTAG_KURZ[date_obj.weekday()]
-    header = f"{wd}, {date_obj.strftime('%d.%m.%y')}   {dienst}"
+# -----------------------------
+# HAUPTPARSER
+# -----------------------------
 
-    output = [header, ""]
+def process_file(path: str):
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
 
-    segments = split_segments(rows)
-    last_umlauf = None
+    output_blocks = []
+    current_header = None
+    current_block = []
 
-    for seg in segments:
-        if not seg:
+    pending_trip = None
+
+    for line in lines:
+        line = line.strip()
+        if not line:
             continue
 
-        # Nur der erste und letzte sinnvolle Punkt pro Segment
-        picked = [seg[0]]
-        if len(seg) > 1 and seg[-1] != seg[0]:
-            picked.append(seg[-1])
+        # Header
+        header = parse_header(line)
+        if header:
+            if current_block:
+                output_blocks.append((current_header, current_block))
+                current_block = []
 
-        for row in picked:
-            stop_code, time_value = choose_display_point(row, row == seg[0])
-            line = (row["line"] or "").strip()
-            end_code = code_stop(row["end_stop"])
-            umlauf = (row["umlauf"] or "").strip()
-
-            if not line:
-                continue
-
-            output.append(f"{stop_code}  {time_value}  {line} {end_code}")
-
-            if umlauf and umlauf != last_umlauf:
-                output.append(f"       => {umlauf}")
-                last_umlauf = umlauf
-
-            output.append("")
-
-    return "\n".join(output).rstrip() + "\n"
-
-
-def main():
-    username = os.getenv("RNV_USER", "").strip()
-    password = os.getenv("RNV_PASS", "").strip()
-
-    if not username or not password:
-        raise RuntimeError("RNV_USER oder RNV_PASS fehlt.")
-
-    os.makedirs(NOTES_DIR, exist_ok=True)
-
-    services = load_checkpoint()
-    if not services:
-        print("Keine Dienste in checkpoint.json gefunden.")
-        return
-
-    session = requests.Session()
-    login(session, username, password)
-
-    # Gruppe pro Datum + Dienstnummer
-    grouped = defaultdict(list)
-    for s in services:
-        key = f"{s['year']}-{s['month']}-{s['day']}-{s['id']}"
-        grouped[key].append(s)
-
-    for key, group in grouped.items():
-        s = group[0]
-        year = int(s["year"])
-        month = int(s["month"])
-        day = int(s["day"])
-        dienst = s["id"]
-
-        date_obj = datetime(year, month, day)
-        date_str = date_obj.strftime("%Y-%m-%d")
-
-        rows = parse_shift_rows(session, date_str, dienst)
-        if not rows:
-            print(f"Keine Daten für {date_str} / {dienst}")
+            current_header = header
             continue
 
-        content = format_day_file(date_obj, dienst, rows)
+        # Skip Betriebshof / useless lines
+        if is_skip(line):
+            continue
 
-        filename = f"{WOCHENTAG_KURZ[date_obj.weekday()]}_{date_obj.strftime('%d-%m-%y')}_{dienst}.txt"
-        out_path = os.path.join(NOTES_DIR, filename)
+        # Umlaufnummer
+        umlauf = parse_umlauf(line)
+        if umlauf and pending_trip:
+            pending_trip["umlauf"] = umlauf
+            current_block.append(pending_trip)
+            pending_trip = None
+            continue
 
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        # Trip line
+        trip = parse_trip(line)
+        if trip:
+            pending_trip = trip
+            continue
 
-        print(f"Geschrieben: {out_path}")
+    if current_block:
+        output_blocks.append((current_header, current_block))
 
+    return output_blocks
+
+
+# -----------------------------
+# FORMAT OUTPUT
+# -----------------------------
+
+def format_blocks(blocks):
+    out = []
+
+    for header, trips in blocks:
+        if not header:
+            continue
+
+        out.append(header)
+        out.append("")
+
+        for t in trips:
+            out.append(f"{t['from']}  {t['time']}  {t['line']} {t['to']}")
+            if "umlauf" in t:
+                out.append(f"       => {t['umlauf']}")
+            out.append("")
+
+    return "\n".join(out)
+
+
+# -----------------------------
+# MAIN (GITHUB ACTION)
+# -----------------------------
 
 if __name__ == "__main__":
-    main()
+    input_file = "input.txt"   # <- deine Rohdaten
+    output_file = "output.txt"
+
+    blocks = process_file(input_file)
+    result = format_blocks(blocks)
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(result)
+
+    print("Fertig geschrieben:", output_file)
