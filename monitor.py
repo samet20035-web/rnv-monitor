@@ -224,8 +224,24 @@ def main():
     session = requests.Session()
     try:
         login(session)
-        html = session.get(ROSTER_URL).text
-        current = parse_services(html)
+       # 2. Dynamisch beide Monate laden
+        all_services = []
+        
+        # Aktueller Monat
+        html_curr = session.get(ROSTER_URL).text
+        all_services.extend(parse_services(html_curr))
+        
+        # Nächster Monat (berechnet das Datum des 28. des nächsten Monats)
+        heute = datetime.utcnow()
+        naechster_monat = (heute.replace(day=28) + timedelta(days=5)).replace(day=28)
+        datum_str = naechster_monat.strftime("%Y-%m-%d")
+        
+        html_next = session.get(f"{ROSTER_URL}?{datum_str}").text
+        all_services.extend(parse_services(html_next))
+        
+        # 3. Dubletten entfernen (falls ein Dienst in beiden Monaten auftaucht)
+        unique_services = {f"{s['day']}-{s['id']}": s for s in all_services}.values()
+        current = list(unique_services)
 
         old = []
         if os.path.exists(CHECKPOINT_FILE):
