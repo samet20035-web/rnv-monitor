@@ -11,7 +11,7 @@ ROSTER_URL = f"{BASE_URL}/roster.aspx"
 START_URL = f"{LOGIN_URL}?TestingCookie=1"
 
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "DEIN_TOPIC")
-NTFY_TOPIC_MAMA = os.getenv("NTFY_TOPIC_MAMA", "MAMA_TOPIC")
+NTFY_TOPIC_MAMA = os.getenv("NTFY_TOPIC_MAMA")
 USERNAME = os.getenv("RNV_USER", "DEIN_USER")
 PASSWORD = os.getenv("RNV_PASS", "DEIN_PASS")
 MEIN_NAME = "Samet"
