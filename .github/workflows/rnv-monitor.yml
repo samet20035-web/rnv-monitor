@@ -30,6 +30,7 @@ jobs:
           RNV_USER: ${{ secrets.RNV_USER }}
           RNV_PASS: ${{ secrets.RNV_PASS }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_TOPIC_ROYAL: ${{ secrets.NTFY_TOPIC_ROYAL }}
         run: |
           python monitor.py
 
@@ -38,11 +39,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Wir fügen sowohl die checkpoint.json als auch die dienstplan.ics hinzu
-          # Wir prüfen, ob mindestens eine der Dateien existiert, um Fehler zu vermeiden
-          if [ -f checkpoint.json ] || [ -f dienstplan.ics ]; then
-            git add checkpoint.json dienstplan.ics
-            # git diff --cached prüft, ob wirklich Änderungen im Staging-Bereich sind
+          # Dateien nur zum Staging hinzufügen, wenn sie existieren
+          FILES_TO_ADD=""
+          if [ -f "checkpoint.json" ]; then FILES_TO_ADD="$FILES_TO_ADD checkpoint.json"; fi
+          if [ -f "dienstplan.ics" ]; then FILES_TO_ADD="$FILES_TO_ADD dienstplan.ics"; fi
+          
+          if [ -n "$FILES_TO_ADD" ]; then
+            git add $FILES_TO_ADD
+            # Prüfen, ob wirklich Änderungen im Staging vorhanden sind
             if ! git diff --cached --quiet; then
               git commit -m "Update Dienstplan und Checkpoint"
               git push
