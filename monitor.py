@@ -275,10 +275,6 @@ def main():
             else:
                 continue
 
-                "Title": "Perdis"
-            }
-            requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
-
         # ICS Datei generieren und schreiben
         ics_data = generate_ics(current, session)
         with open(ICS_FILE, "w", encoding="utf-8") as f:
