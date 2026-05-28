@@ -1,0 +1,20 @@
+Di, 12.05.26   2063007-2
+BHHF  13:50  21 Schriesheim Bahnhof
+       => 2151
+Schriesheim Bahnhof  14:12  21 Schriesheim Bahnhof
+Schriesheim Bahnhof  14:22  21 BHBP
+BHBP  14:50  21 BHBP
+BHBP  14:51  21 HHHT
+HHHT  14:58  21 HHHT
+HHHT  15:16  21 BHBP
+BHBP  15:23  21 BHBP
+BHBP  15:24  21 Schriesheim Bahnhof
+Schriesheim Bahnhof  15:52  21 Schriesheim Bahnhof
+Schriesheim Bahnhof  16:02  21 BHBP
+BHBP  16:30  21 BHBP
+BHBP  16:31  21 HHHT
+HHHT  16:38  21 HHHT
+HHHT  16:56  21 BHBP
+BHBP  17:03  21 BHBP
+BHBP  17:04  21 BHHF
+  17:10

@@ -1,0 +1,40 @@
+Fr, 29.05.26   2061036
+Bth. HD Bergheim  06:07  24 Heiligenbergschule
+       => 2662
+Heiligenbergschule  06:26  24 Heiligenbergschule
+Heiligenbergschule  06:27  26 KHFH
+KHFH  06:57  26 KHFH
+KHFH  07:07  26 Heiligenbergschule
+Heiligenbergschule  07:36  26 Heiligenbergschule
+Heiligenbergschule  07:37  24 RSRS
+RSRS  08:05  24 RSRS
+RSRS  08:11  24 Heiligenbergschule
+Heiligenbergschule  08:36  24 Heiligenbergschule
+Heiligenbergschule  08:37  26 KHFH
+KHFH  09:07  26 KHFH
+KHFH  09:17  26 Heiligenbergschule
+Heiligenbergschule  09:46  26 Heiligenbergschule
+Heiligenbergschule  09:47  24 BHBH
+       PAUSE 09:53 - 10:23
+       PAUSE 10:23 - 10:51
+BHBH  10:51  24 Heiligenbergschule
+       => 2663
+Heiligenbergschule  10:56  24 Heiligenbergschule
+Heiligenbergschule  10:57  26 KHFH
+KHFH  11:27  26 KHFH
+KHFH  11:37  26 Heiligenbergschule
+Heiligenbergschule  12:06  26 Heiligenbergschule
+Heiligenbergschule  12:07  24 RSRS
+RSRS  12:35  24 RSRS
+RSRS  12:41  24 Heiligenbergschule
+Heiligenbergschule  13:06  24 Heiligenbergschule
+Heiligenbergschule  13:07  26 BHBH
+       PAUSE 13:21 - 13:41
+BHBH  13:41  24 Heiligenbergschule
+       => 2661
+Heiligenbergschule  13:46  24 Heiligenbergschule
+Heiligenbergschule  13:47  26 KHFH
+KHFH  14:17  26 KHFH
+KHFH  14:27  26 Heiligenbergschule
+Heiligenbergschule  14:56  26 Heiligenbergschule
+Heiligenbergschule  14:57  24 BHBH
