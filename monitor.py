@@ -181,81 +181,68 @@ def main():
             except (json.JSONDecodeError, ValueError):
                 print("Warnung: Checkpoint-Datei war korrupt, erstelle neue Liste.")
                 old = []
-            
-        if current != old:
-            # Unterscheidung: neuer Dienst vs. Änderung
-            for item in current:
-                if item not in old:
-                    # NEUER Dienst
-                    service_date = f"2026-05-{item['day']}"
-                    
-                    day_num = int(item['day'])
-                    date_obj = datetime(2026, 5, day_num)
-                    wochentag = WOCHENTAG[date_obj.weekday()]
-                    
-                    details = get_service_details(session, service_date, item['id'])
         
-                    msg = (
-                        f"🔔 Neuer Dienst {item['id']}\n"
-                        f"📅 {wochentag}, {item['day']}.05.2026\n"
-                        f"⏰ Zeit: {item['time']}\n"
-                        f"🆔 Dienstnummer: {item['id']}\n\n"
-                        f"{details}\n\n"
-                        f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
-                    )
-                    
-                    is_change = False
-                else:
-                    # ÄNDERUNG (Dienst war schon da, aber sich geändert)
-                    # Finde den alten Eintrag für Vergleich
-                    old_item = None
-                    for o in old:
-                        if o['id'] == item['id']:
-                            old_item = o
-                            break
-                    
-                    if old_item and old_item != item:
-                        # Änderung erkannt
-                        service_date = f"2026-05-{item['day']}"
-                        
-                        day_num = int(item['day'])
-                        date_obj = datetime(2026, 5, day_num)
-                        wochentag = WOCHENTAG[date_obj.weekday()]
-                        
-                        details = get_service_details(session, service_date, item['id'])
+        # Erstelle Dicts für schnellen Zugriff nach ID
+        old_dict = {item['id']: item for item in old}
+        current_dict = {item['id']: item for item in current}
         
-                        msg = (
-                            f"🔔 Dienstplanänderung {item['id']}\n"
-                            f"📅 {wochentag}, {item['day']}.05.2026\n"
-                            f"⏰ Neue Zeit: {item['time']}\n"
-                            f"🆔 Dienstnummer: {item['id']}\n\n"
-                            f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
-                        )
-                        
-                        is_change = True
-                    else:
-                        continue  # Keine Änderung, überspringen
-            
-            # Nur senden, wenn es wirklich Änderungen gab
-            if 'msg' in locals():
-                calendar_link = create_calendar_link(item, details, service_date)
-                headers = {
-                    "Click": calendar_link,
-                    "Title": "Perdis"
-                }
+        # Unterscheidung: neue Dienste vs. Änderungen
+        for item_id, item in current_dict.items():
+            if item_id not in old_dict:
+                # NEUER Dienst
+                service_date = f"2026-05-{item['day']}"
+                day_num = int(item['day'])
+                date_obj = datetime(2026, 5, day_num)
+                wochentag = WOCHENTAG[date_obj.weekday()]
                 
-                requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
-                if is_change:
-                    print(f"Dienstplanänderung gesendet für Dienst {item['id']}")
-                else:
-                    print(f"Neuer Dienst gesendet für Dienst {item['id']}")
+                details = get_service_details(session, service_date, item['id'])
+                
+                msg = (
+                    f"Neuer Dienst {item['id']}\n"
+                    f"📅 {wochentag}, {item['day']}.05.2026\n"
+                    f"⏰ Zeit: {item['time']}\n"
+                    f"🆔 Dienstnummer: {item['id']}\n\n"
+                    f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
+                )
+                
+                print(f"Neuer Dienst gesendet für Dienst {item['id']}")
+                
+            elif old_dict[item_id] != item:
+                # ÄNDERUNG (ID existiert, aber Daten sind anders)
+                service_date = f"2026-05-{item['day']}"
+                day_num = int(item['day'])
+                date_obj = datetime(2026, 5, day_num)
+                wochentag = WOCHENTAG[date_obj.weekday()]
+                
+                details = get_service_details(session, service_date, item['id'])
+                
+                msg = (
+                    f"🔔 Dienstplanänderung {item['id']}\n"
+                    f"📅 {wochentag}, {item['day']}.05.2026\n"
+                    f"⏰ Neue Zeit: {item['time']}\n"
+                    f"🆔 Dienstnummer: {item['id']}\n\n"
+                    f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
+                )
+                
+                print(f"Dienstplanänderung gesendet für Dienst {item['id']}")
             
-            with open(CHECKPOINT_FILE, "w") as f:
-                json.dump(current, f, indent=2)
-            print("Checkpoint gespeichert.")
-        else:
-            print("Keine Änderungen.")
+            else:
+                continue  # Keine Änderung, überspringen
             
+            # Senden
+            calendar_link = create_calendar_link(item, details, service_date)
+            headers = {
+                "Click": calendar_link,
+                "Title": "Perdis"
+            }
+            
+            requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
+        
+        # Save checkpoint
+        with open(CHECKPOINT_FILE, "w") as f:
+            json.dump(current, f, indent=2)
+        print("Checkpoint gespeichert.")
+        
     except Exception as e:
         print(f"KRITISCHER FEHLER: {e}")
 
