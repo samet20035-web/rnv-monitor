@@ -283,7 +283,7 @@ def main():
             if item_id not in old_dict:
                 msg = (
                     f"Neuer Dienst {item['id']}\n"
-                    f"📅 {wochentag}, {item['day']}.05.2026\n"
+                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}"
                     f"⏰ Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                 )
@@ -332,7 +332,7 @@ def main():
 
                 msg_mama = (
                     f"⚠️ Samets Dienst hat sich geändert\n"
-                    f"📅 Wann: {wochentag}, {item['day']}.05.2026\n"
+                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}"
                     f"⏰ Neue Zeit: {item['time']}\n\n"
                     f"*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*"
                 )
@@ -346,6 +346,10 @@ def main():
                     }
                     timeout=10
                 )
+
+                print("ntfy status:", resp.status_code)
+                print("ntfy body:", resp.text[:300])
+                
             else:
                 continue
 
