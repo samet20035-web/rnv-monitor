@@ -32,12 +32,10 @@ def generate_ics(services, session):
     ]
 
     for s in services:
-        # Dynamische Variablen aus dem Dienst-Objekt nutzen
         jahr = s.get('year', '2026')
         monat = s.get('month', '05')
-        tag = s['day'].zfill(2) # Stellt sicher, dass aus '1' -> '01' wird
-        
-        # Abfrage-Datum für die Details (muss für die RNV Seite passen)
+        tag = s['day'].zfill(2)
+
         date_str = f"{jahr}-{monat}-{tag}"
         info = get_service_details(session, date_str, s['id'])
 
@@ -48,7 +46,6 @@ def generate_ics(services, session):
 
             ics_lines.append("BEGIN:VEVENT")
             ics_lines.append(f"SUMMARY:Straßenbahn Dienst {s['id']} ({MEIN_NAME})")
-            # Dynamische Datums-Zusammensetzung für den Kalender
             ics_lines.append(f"DTSTART:{jahr}{monat}{tag}T{start_zeit}")
             ics_lines.append(f"DTEND:{jahr}{monat}{tag}T{ende_zeit}")
             ics_lines.append(f"DESCRIPTION:{desc}")
@@ -220,7 +217,6 @@ def parse_services(html, month, year):
             span = td.find("span")
             time_val = span.get_text(strip=True) if span else ""
             
-            # HIER werden Jahr und Monat ins Dictionary geschrieben:
             services.append({
                 "day": day_str,
                 "time": time_val,
@@ -239,9 +235,8 @@ def main():
     session = requests.Session()
     try:
         login(session)
-       # 2. Dynamisch beide Monate laden
+
         all_services = []
-        # WICHTIG: Hier jetzt die Parameter mitgeben!
         html_curr = session.get(ROSTER_URL).text
         month, year = get_current_month_year()
         
@@ -250,10 +245,8 @@ def main():
         heute = datetime.utcnow()
         naechster_monat = (heute.replace(day=28) + timedelta(days=5)).replace(day=28)
         html_next = session.get(f"{ROSTER_URL}?{naechster_monat.strftime('%Y-%m-%d')}").text
-        # WICHTIG: Hier jetzt die dynamischen Parameter für den nächsten Monat!
         all_services.extend(parse_services(html_next, naechster_monat.strftime("%m"), naechster_monat.strftime("%Y")))
         
-        # 3. Dubletten entfernen (falls ein Dienst in beiden Monaten auftaucht)
         unique_services = {f"{s['day']}-{s['id']}": s for s in all_services}.values()
         current = list(unique_services)
 
@@ -283,7 +276,7 @@ def main():
             if item_id not in old_dict:
                 msg = (
                     f"Neuer Dienst {item['id']}\n"
-                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}"
+                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
                     f"⏰ Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                 )
@@ -296,14 +289,14 @@ def main():
 
                 msg_mama = (
                     f"Neuer Dienst hinzugefügt\n"
-                    f"📅 Wann: {wochentag}, {item['day']}.{item['month']}.{item['year']}"
+                    f"📅 Wann: {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
                     f"⏰ Zeit: {item['time']}\n\n"
                     f"*Samets Dienstplan wurde aktualisiert.*"
                 )
 
                 print("NTFY_TOPIC_MAMA =", repr(NTFY_TOPIC_MAMA))
 
-                requests.post(
+                resp = requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
                     data=msg_mama.encode("utf-8"),
                     headers={
@@ -319,7 +312,7 @@ def main():
             elif old_dict[item_id] != item:
                 msg = (
                     f"🔔 Dienstplanänderung {item['id']}\n"
-                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}"
+                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
                     f"⏰ Neue Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                 )
@@ -332,18 +325,18 @@ def main():
 
                 msg_mama = (
                     f"⚠️ Samets Dienst hat sich geändert\n"
-                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}"
+                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
                     f"⏰ Neue Zeit: {item['time']}\n\n"
                     f"*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*"
                 )
 
-                requests.post(
+                resp = requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
                     data=msg_mama.encode("utf-8"),
                     headers={
                         "Title": "Dienstplan Samet RNV",
                         "Icon": "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios57x57.png"
-                    }
+                    },
                     timeout=10
                 )
 
