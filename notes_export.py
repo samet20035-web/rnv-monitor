@@ -2,180 +2,164 @@ import re
 from collections import defaultdict
 
 # -----------------------------
-# KONFIG
+# STOP-KÜRZEL MAP
 # -----------------------------
-
-SKIP_KEYWORDS = [
-    "Betriebshof",
-    "BH HD",
-    "BHD",
-    "BTH",
-]
 
 STOP_MAP = {
-    "Bth. HD Betriebshof": "BHBE",
-    "Bth HD Betriebshof": "BHBE",
-    "Betriebshof": "BHBH",
-    "Bismarckplatz": "BHBP",
-    "Hauptbahnhof": "BHHF",
-    "Rohrbach Süd": "RSRS",
-    "Kirchheim Friedhof": "KHFH",
-    "Leimen Friedhof": "LHFH",
-    "Kirchheimer Straße": "EHKS",
-    "Hans-Thoma-Platz": "HHHT",
     "Heiligenbergschule": "HHHS",
+    "Bismarckplatz": "BHBP",
+    "Hans-Thoma-Platz": "HTPL",
+    "Betriebshof": "BHBH",
+    "Bth. HD Betriebshof": "BHBE",
+    "HD Betriebshof": "BHBE",
+    "Kirchheim Friedhof": "KHFH",
+    "Rohrbach Süd": "RSRS",
+    "Eppelheim Kirchheimer Straße": "EHKS",
 }
 
-
-DAYS_MAP = {
-    "Mo": "Mo",
-    "Di": "Di",
-    "Mi": "Mi",
-    "Do": "Do",
-    "Fr": "Fr",
-    "Sa": "Sa",
-    "So": "So",
-}
-
+SKIP_LINES = [
+    "keine Fahrt",
+    "---",
+]
 
 # -----------------------------
-# HILFSFUNKTIONEN
+# NORMALISIERUNG
 # -----------------------------
 
-def clean_stop(code: str) -> str:
-    return STOP_MAP.get(code.strip(), code.strip())
+def norm_stop(text: str) -> str:
+    text = text.strip()
+    return STOP_MAP.get(text, text)
 
 
 def is_skip(line: str) -> bool:
-    return any(k.lower() in line.lower() for k in SKIP_KEYWORDS)
+    l = line.lower()
+    return any(s in l for s in SKIP_LINES)
 
+
+# -----------------------------
+# HEADER PARSER
+# -----------------------------
 
 def parse_header(line: str):
-    """
-    Fr, 29.05.26   2061033
-    """
     m = re.match(r"^(Mo|Di|Mi|Do|Fr|Sa|So),\s*([\d.]+)\s+(\d+)", line)
     if not m:
         return None
-    return f"{m.group(1)}, {m.group(2)}   {m.group(3)}"
+    return {
+        "date": f"{m.group(1)}, {m.group(2)}",
+        "dienst": m.group(3)
+    }
 
+
+# -----------------------------
+# FAHRT PARSER
+# -----------------------------
 
 def parse_trip(line: str):
     """
+    Format:
     BHBH  07:41  26 KHFH
     """
-    m = re.match(r"^(\w+)\s+(\d{1,2}:\d{2})\s+(\d+)\s+(\w+)", line)
+    m = re.match(r"^(\S+)\s+(\d{1,2}:\d{2})\s+(\d+)\s+(.+)$", line)
     if not m:
         return None
 
     return {
-        "from": clean_stop(m.group(1)),
+        "from": norm_stop(m.group(1)),
         "time": m.group(2),
         "line": m.group(3),
-        "to": clean_stop(m.group(4)),
-        "raw_from": m.group(1),
-        "raw_to": m.group(4),
+        "to": norm_stop(m.group(4)),
     }
 
 
+# -----------------------------
+# UMLAUF
+# -----------------------------
+
 def parse_umlauf(line: str):
-    """
-    => 2657
-    """
     m = re.match(r"^\s*=>\s*(\d+)", line)
-    if not m:
-        return None
-    return m.group(1)
+    return m.group(1) if m else None
 
 
 # -----------------------------
-# HAUPTPARSER
+# MAIN PARSER
 # -----------------------------
 
-def process_file(path: str):
-    with open(path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+def process(lines):
+    header = None
+    output = []
 
-    output_blocks = []
-    current_header = None
-    current_block = []
+    current_trip = None
+    last_umlauf = None
 
-    pending_trip = None
-
-    for line in lines:
-        line = line.strip()
+    for raw in lines:
+        line = raw.strip()
         if not line:
             continue
 
-        # Header
-        header = parse_header(line)
-        if header:
-            if current_block:
-                output_blocks.append((current_header, current_block))
-                current_block = []
-
-            current_header = header
+        # HEADER
+        h = parse_header(line)
+        if h:
+            header = h
+            output.append(f"{h['date']}   {h['dienst']}\n")
             continue
 
-        # Skip Betriebshof / useless lines
         if is_skip(line):
             continue
 
-        # Umlaufnummer
-        umlauf = parse_umlauf(line)
-        if umlauf and pending_trip:
-            pending_trip["umlauf"] = umlauf
-            current_block.append(pending_trip)
-            pending_trip = None
+        # UMLAUF
+        uml = parse_umlauf(line)
+        if uml and current_trip:
+            current_trip["umlauf"] = uml
             continue
 
-        # Trip line
+        # TRIP
         trip = parse_trip(line)
         if trip:
-            pending_trip = trip
+            if current_trip:
+                output.append(format_trip(current_trip, last_umlauf))
+                if current_trip.get("umlauf"):
+                    last_umlauf = current_trip["umlauf"]
+
+            current_trip = trip
             continue
 
-    if current_block:
-        output_blocks.append((current_header, current_block))
+    if current_trip:
+        output.append(format_trip(current_trip, last_umlauf))
 
-    return output_blocks
+    return "\n".join(output)
 
 
 # -----------------------------
 # FORMAT OUTPUT
 # -----------------------------
 
-def format_blocks(blocks):
+def format_trip(t, last_umlauf):
     out = []
 
-    for header, trips in blocks:
-        if not header:
-            continue
+    out.append(f"{t['from']}  {t['time']}  {t['line']} {t['to']}")
 
-        out.append(header)
-        out.append("")
+    uml = t.get("umlauf")
+    if uml and uml != last_umlauf:
+        out.append(f"       => {uml}")
 
-        for t in trips:
-            out.append(f"{t['from']}  {t['time']}  {t['line']} {t['to']}")
-            if "umlauf" in t:
-                out.append(f"       => {t['umlauf']}")
-            out.append("")
-
+    out.append("")
     return "\n".join(out)
 
 
 # -----------------------------
-# MAIN (GITHUB ACTION)
+# FILE IO (GITHUB ACTION)
 # -----------------------------
 
 if __name__ == "__main__":
-    input_file = "input.txt"   # <- deine Rohdaten
+    input_file = "input.txt"
     output_file = "output.txt"
 
-    blocks = process_file(input_file)
-    result = format_blocks(blocks)
+    with open(input_file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    result = process(lines)
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(result)
 
-    print("Fertig geschrieben:", output_file)
+    print("Fertig:", output_file)
