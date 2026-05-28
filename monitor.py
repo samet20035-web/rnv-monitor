@@ -26,15 +26,22 @@ def generate_ics(services, session):
     for s in services:
         date_str = f"2026-05-{s['day']}"
         info = get_service_details(session, date_str, s['id'])
+        
         if info["start_time"] and info["start_time"] != "-":
             start_zeit = info["start_time"].replace(":", "") + "00"
             ende_zeit = info["end_time"].replace(":", "") + "00"
+            
+            # Hier bauen wir den Beschreibungstext genau nach deinem Wunsch:
+            # \n steht für einen Zeilenumbruch in der ICS-Datei
+            desc = info['text'].replace(chr(10), '\\n') 
+            
             ics_lines.append("BEGIN:VEVENT")
-            ics_lines.append(f"SUMMARY:Dienst {s['id']}")
+            ics_lines.append(f"SUMMARY:Straßenbahn Dienst {s['id']} ({MEIN_NAME})")
             ics_lines.append(f"DTSTART:202605{s['day']}T{start_zeit}")
             ics_lines.append(f"DTEND:202605{s['day']}T{ende_zeit}")
-            ics_lines.append(f"DESCRIPTION:{info['text'].replace(chr(10), ' ')}")
+            ics_lines.append(f"DESCRIPTION:{desc}")
             ics_lines.append("END:VEVENT")
+            
     ics_lines.append("END:VCALENDAR")
     return "\n".join(ics_lines)
 
