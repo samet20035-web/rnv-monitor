@@ -20,6 +20,23 @@ CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 
 WOCHENTAG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
+def generate_ics(services, session):
+    ics_lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//RNV//Dienstplan//DE", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"]
+    for s in services:
+        date_str = f"2026-05-{s['day']}"
+        info = get_service_details(session, date_str, s['id'])
+        if info["start_time"] and info["start_time"] != "-":
+            start_zeit = info["start_time"].replace(":", "") + "00"
+            ende_zeit = info["end_time"].replace(":", "") + "00"
+            ics_lines.append("BEGIN:VEVENT")
+            ics_lines.append(f"SUMMARY:Dienst {s['id']}")
+            ics_lines.append(f"DTSTART:202605{s['day']}T{start_zeit}")
+            ics_lines.append(f"DTEND:202605{s['day']}T{ende_zeit}")
+            ics_lines.append(f"DESCRIPTION:{info['text'].replace(chr(10), ' ')}")
+            ics_lines.append("END:VEVENT")
+    ics_lines.append("END:VCALENDAR")
+    return "\n".join(ics_lines)
+
 def get_hidden_fields(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     return {inp.get("name"): inp.get("value", "") for inp in soup.find_all("input", type="hidden") if inp.get("name")}
