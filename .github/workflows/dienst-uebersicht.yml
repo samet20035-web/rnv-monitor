@@ -1,0 +1,59 @@
+name: RNV Dienst-Übersicht
+
+on:
+  workflow_dispatch:
+  # Läuft nach dem Monitor-Workflow (der um */15 6-17 läuft)
+  # +2 Minuten Versatz damit checkpoint.json schon aktuell ist
+  schedule:
+    - cron: "2,17,32,47 6-17 * * *"
+  # Alternativ: wird getriggert wenn monitor.py checkpoint.json pusht
+  push:
+    paths:
+      - "checkpoint.json"
+
+jobs:
+  uebersicht:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run Dienst-Übersicht
+        env:
+          RNV_USER: ${{ secrets.RNV_USER }}
+          RNV_PASS: ${{ secrets.RNV_PASS }}
+        run: python dienst_uebersicht.py
+
+      - name: Commit Übersicht
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          FILES_TO_ADD=""
+          if [ -f "dienst_uebersicht.md" ];  then FILES_TO_ADD="$FILES_TO_ADD dienst_uebersicht.md";  fi
+          if [ -f "dienst_uebersicht.txt" ]; then FILES_TO_ADD="$FILES_TO_ADD dienst_uebersicht.txt"; fi
+
+          if [ -n "$FILES_TO_ADD" ]; then
+            git add $FILES_TO_ADD
+            if ! git diff --cached --quiet; then
+              git commit -m "Update Dienst-Übersicht"
+              git push
+            else
+              echo "Keine Änderungen."
+            fi
+          else
+            echo "Keine Ausgabedateien vorhanden."
+          fi
