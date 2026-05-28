@@ -344,7 +344,8 @@ def main():
                         "Title": "Dienstplan Samet RNV",
                         "Icon": "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios57x57.png"
                     }
-
+                    timeout=10
+                )
             else:
                 continue
 
