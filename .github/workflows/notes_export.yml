@@ -1,5 +1,9 @@
 name: RNV Notes Export
 
+concurrency:
+  group: rnv-notes-export
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   schedule:
@@ -41,7 +45,7 @@ jobs:
           fi
 
           if ! git diff --cached --quiet; then
-            git commit -m "Update daily notes export"
+            git commit -m "Update notes export"
             git push
           else
             echo "Keine Änderungen zum Committen gefunden."
