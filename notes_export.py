@@ -1,10 +1,11 @@
 import re
-from collections import defaultdict
+import os
+from pathlib import Path
 
 STOP_MAP = {
     "Heiligenbergschule": "HHHS",
     "Bismarckplatz": "BHBP",
-    "Hans-Thoma-Platz": "HTPL",
+    "Hans-Thoma-Platz": "HHTP",
     "Betriebshof": "BHBH",
     "Bth. HD Betriebshof": "BHBE",
     "HD Betriebshof": "BHBE",
@@ -17,6 +18,10 @@ SKIP_LINES = [
     "keine fahrt",
     "---",
 ]
+
+BASE_DIR = Path(__file__).resolve().parent
+INPUT_FILE = BASE_DIR / "input.txt"
+OUTPUT_FILE = BASE_DIR / "output.txt"
 
 def norm_stop(text: str) -> str:
     text = text.strip()
@@ -60,7 +65,6 @@ def format_trip(t, last_umlauf):
     return "\n".join(out)
 
 def process(lines):
-    header = None
     output = []
     current_trip = None
     last_umlauf = None
@@ -72,7 +76,6 @@ def process(lines):
 
         h = parse_header(line)
         if h:
-            header = h
             output.append(f"{h['date']}   {h['dienst']}\n")
             continue
 
@@ -98,16 +101,21 @@ def process(lines):
 
     return "\n".join(output)
 
-if __name__ == "__main__":
-    input_file = "input.txt"
-    output_file = "output.txt"
+def main():
+    if not INPUT_FILE.exists():
+        print(f"Fehler: Eingabedatei nicht gefunden: {INPUT_FILE}")
+        print("Bitte input.txt ins Repo legen oder den Pfad in notes_export.py anpassen.")
+        return
 
-    with open(input_file, "r", encoding="utf-8") as f:
+    with INPUT_FILE.open("r", encoding="utf-8") as f:
         lines = f.readlines()
 
     result = process(lines)
 
-    with open(output_file, "w", encoding="utf-8") as f:
+    with OUTPUT_FILE.open("w", encoding="utf-8") as f:
         f.write(result)
 
-    print("Fertig:", output_file)
+    print("Fertig:", OUTPUT_FILE.name)
+
+if __name__ == "__main__":
+    main()
