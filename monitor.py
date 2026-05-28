@@ -303,11 +303,14 @@ def main():
 
                 print("NTFY_TOPIC_MAMA =", repr(NTFY_TOPIC_MAMA))
 
-                resp = requests.post(
+                requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
                     data=msg_mama.encode("utf-8"),
-                    headers={"Title": "Dienstplan Samet RNV"},
-                    timeout=10,
+                    headers={
+                        "Title": "Dienstplan Samet RNV",
+                        "Icon": "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios57x57.png"
+                    },
+                    timeout=10
                 )
                 
                 print("ntfy status:", resp.status_code)
@@ -337,8 +340,10 @@ def main():
                 requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
                     data=msg_mama.encode("utf-8"),
-                    headers={"Title": "Dienstplan Samet RNV"}
-                )
+                    headers={
+                        "Title": "Dienstplan Samet RNV",
+                        "Icon": "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios57x57.png"
+                    }
 
             else:
                 continue
