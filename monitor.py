@@ -165,11 +165,10 @@ def main():
         
                     # Nachrichtenaufbau wie gewünscht
                     msg = (
-                        f"🔔 Neuer Dienst {item['id']}\n"
+                        f"Neuer Dienst {item['id']}\n"
                         f"📅 Tag: {item['day']}.05.2026\n"
                         f"⏰ Zeit: {item['time']}\n"
                         f"🆔 Dienstnummer: {item['id']}\n\n"
-                        f"{details}\n\n"
                         f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                     )
         
