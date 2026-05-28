@@ -30,7 +30,7 @@ jobs:
           RNV_USER: ${{ secrets.RNV_USER }}
           RNV_PASS: ${{ secrets.RNV_PASS }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          NTFY_TOPIC_ROYAL: ${{ secrets.NTFY_TOPIC_ROYAL }}
+          NTFY_TOPIC_MAMA: ${{ secrets.NTFY_TOPIC_MAMA }}
         run: |
           python monitor.py
 
