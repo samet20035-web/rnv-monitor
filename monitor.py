@@ -56,6 +56,10 @@ def generate_ics(services, session):
 
     ics_lines.append("END:VCALENDAR")
     return "\n".join(ics_lines)
+
+def get_current_month_year():
+    now = datetime.utcnow()
+    return now.strftime("%m"), now.strftime("%Y")
     
 def get_hidden_fields(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
@@ -239,7 +243,9 @@ def main():
         all_services = []
         # WICHTIG: Hier jetzt die Parameter mitgeben!
         html_curr = session.get(ROSTER_URL).text
-        all_services.extend(parse_services(html_curr, "05", "2026"))
+        month, year = get_current_month_year()
+        
+        all_services.extend(parse_services(html_curr, month, year))
         
         heute = datetime.utcnow()
         naechster_monat = (heute.replace(day=28) + timedelta(days=5)).replace(day=28)
@@ -264,9 +270,13 @@ def main():
         current_dict = {item["id"]: item for item in current}
 
         for item_id, item in current_dict.items():
-            service_date = f"2026-05-{item['day']}"
+            service_date = f"{item['year']}-{item['month']}-{item['day']}"
             day_num = int(item["day"])
-            date_obj = datetime(2026, 5, day_num)
+            date_obj = datetime(
+                int(item["year"]),
+                int(item["month"]),
+                int(item["day"])
+            )
             wochentag = WOCHENTAG[date_obj.weekday()]
             info = get_service_details(session, service_date, item["id"])
 
@@ -286,7 +296,7 @@ def main():
 
                 msg_mama = (
                     f"Neuer Dienst hinzugefügt\n"
-                    f"📅 Wann: {wochentag}, {item['day']}.05.2026\n"
+                    f"📅 Wann: {wochentag}, {item['day']}.{item['month']}.{item['year']}"
                     f"⏰ Zeit: {item['time']}\n\n"
                     f"*Samets Dienstplan wurde aktualisiert.*"
                 )
@@ -306,7 +316,7 @@ def main():
             elif old_dict[item_id] != item:
                 msg = (
                     f"🔔 Dienstplanänderung {item['id']}\n"
-                    f"📅 {wochentag}, {item['day']}.05.2026\n"
+                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}"
                     f"⏰ Neue Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                 )
