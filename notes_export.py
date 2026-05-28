@@ -1,221 +1,155 @@
-import os
-import json
+from collections import defaultdict
 from datetime import datetime
 
-import requests
-from bs4 import BeautifulSoup
-
-BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm"
-CHECKPOINT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoint.json")
-NOTES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notes")
-
-WOCHENTAG_KURZ = {
-    0: "Mo",
-    1: "Di",
-    2: "Mi",
-    3: "Do",
-    4: "Fr",
-    5: "Sa",
-    6: "So",
+# =========================
+# 1. STOP ALIASES
+# =========================
+STOP_MAP = {
+    "Heiligenbergschule": "HHHS",
+    "Bismarplatz": "BHBP",
 }
 
-LOCATION_CODES = [
-    ("Bth. HD Betriebshof", "BHBE"),
-    ("Bth HD Betriebshof", "BHBE"),
-    ("Betriebshof", "BHBH"),
-    ("Bismarckplatz", "BHBP"),
-    ("Hauptbahnhof", "BHHF"),
-    ("Rohrbach Süd", "RSRS"),
-    ("Kirchheim Friedhof", "KHFH"),
-    ("Leimen Friedhof", "LHFH"),
-    ("Kirchheimer Straße", "EHKS"),
-    ("Hans-Thoma-Platz", "HHHT"),
-]
+# =========================
+# 2. OPTIONALE LINIENREGELN
+# (hier später erweiterbar)
+# =========================
+LINE_RULES = {
+    # Beispielstruktur für später
+    22: {},
+    23: {},
+    24: {},
+    26: {},
+}
 
-def load_checkpoint():
-    if not os.path.exists(CHECKPOINT_FILE):
-        return []
-    with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+# =========================
+# 3. FORMAT HELPERS
+# =========================
+def norm_stop(name: str) -> str:
+    return STOP_MAP.get(name, name)
 
-def get_hidden_fields(html: str) -> dict:
-    soup = BeautifulSoup(html, "html.parser")
-    return {
-        inp.get("name"): inp.get("value", "")
-        for inp in soup.find_all("input", type="hidden")
-        if inp.get("name")
-    }
 
-def login(session: requests.Session, username: str, password: str):
-    login_url = f"{BASE_URL}/default.aspx"
-    roster_url = f"{BASE_URL}/roster.aspx"
-    start_url = f"{login_url}?TestingCookie=1"
+def format_header(date_str, dienst):
+    return f"{date_str}   {dienst}"
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Origin": "https://fahrerauskunft.rnv-online.de",
-        "Referer": login_url,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
 
-    session.get(start_url, headers=headers)
-    r = session.get(login_url, headers=headers)
-    hidden = get_hidden_fields(r.text)
+def format_line(stop, time, line, end):
+    return f"{stop}  {time}  {line} {end}"
 
-    payload = {
-        **hidden,
-        "__EVENTTARGET": "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton",
-        "ctl00$cntMainBody$lgnView$lgnLogin$UserName": username,
-        "ctl00$cntMainBody$lgnView$lgnLogin$Password": password,
-    }
 
-    r2 = session.post(login_url, data=payload, headers=headers)
+def format_umlauf(umlauf):
+    return f"       => {umlauf}"
 
-    if r2.status_code == 500:
-        raise Exception("RNV hat mit 500 geantwortet.")
 
-    if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
-        raise Exception("Login fehlgeschlagen.")
-
-def abbrev_location(text: str, position: str = "") -> str:
-    raw = (text or "").replace("\xa0", " ").strip()
-
-    if not raw:
-        return ""
-
-    # Sonderfall Betriebshof HD
-    if "Bth. HD Betriebshof" in raw or "Bth HD Betriebshof" in raw:
-        return "BHBE" if position in ("start", "end") else "BHBH"
-
-    for needle, code in LOCATION_CODES:
-        if needle in raw:
-            return code
-
-    return raw
-
-def parse_shift_rows(session: requests.Session, date_str: str, service_id: str):
+# =========================
+# 4. CORE LOGIC
+# =========================
+def build_output(entries, date_str, dienst):
     """
-    Liest die Tagesseite und gibt alle Zeilen für genau diese Dienstnummer zurück.
+    entries = Liste von Fahrten in chronologischer Reihenfolge
     """
-    resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}")
-    soup = BeautifulSoup(resp.text, "html.parser")
-    table = soup.find("table", {"id": "ctl00_cntMainBody_lstDienstinfo"})
 
-    if not table:
-        return []
+    output = []
+    output.append(format_header(date_str, dienst))
+    output.append("")
 
-    rows = []
-    for tr in table.find_all("tr"):
-        tds = tr.find_all("td")
-        if len(tds) < 10:
-            continue
+    last_umlauf = None
 
-        vals = [td.get_text(" ", strip=True).replace("\xa0", "").strip() for td in tds]
-        if vals[0] != service_id:
-            continue
+    for e in entries:
 
-        rows.append({
-            "dienst": vals[0],
-            "von": vals[1],
-            "start_ort": vals[2],
-            "bis": vals[3],
-            "end_ort": vals[4],
-            "abw": vals[5],
-            "linie": vals[6],
-            "kurs": vals[7],
-            "umlauf": vals[8],
-            "art": vals[9],
-        })
-
-    return rows
-
-def build_day_text(date_obj: datetime, service_id: str, rows: list[dict]) -> str:
-    wd = WOCHENTAG_KURZ[date_obj.weekday()]
-    header = f"{wd}, {date_obj.strftime('%d.%m.%y')}   {service_id}"
-    lines = [header]
-
-    current_umlauf = None
-
-    for row in rows:
-        art = (row["art"] or "").lower()
-        start_code = abbrev_location(row["start_ort"], "start")
-        end_code = abbrev_location(row["end_ort"], "end")
-        von = row["von"]
-        bis = row["bis"]
-        linie = row["linie"]
-        umlauf = row["umlauf"]
-
-        # Pause-Zeilen separat oder überspringen
-        if "pause" in art:
-            # Wenn du Pause-Zeilen auch sehen willst, diese 2 Zeilen aktiv lassen:
-            lines.append(f"       PAUSE {von} - {bis}")
-            continue
+        stop = norm_stop(e["stop"])
+        time = e["time"]
+        line = e["line"]
+        end = e["end"]
+        umlauf = e.get("umlauf")
 
         # Hauptzeile
-        if linie and linie != "&nbsp;":
-            main_line = f"{start_code}  {von}  {linie} {end_code}"
-        else:
-            main_line = f"{start_code}  {von}     {end_code}"
+        output.append(format_line(stop, time, line, end))
 
-        lines.append(main_line)
+        # Umlauf nur bei Wechsel anzeigen
+        if umlauf and umlauf != last_umlauf:
+            output.append(format_umlauf(umlauf))
+            last_umlauf = umlauf
 
-        # Umlauf nur dann extra anzeigen, wenn er sich ändert
-        if umlauf and umlauf != "&nbsp;" and umlauf != current_umlauf:
-            lines.append(f"       => {umlauf}")
-            current_umlauf = umlauf
+        output.append("")  # Blocktrennung
 
-        # Wegezeit / Mitfahrt markieren
-        if "wegezeit" in art:
-            if end_code:
-                lines.append(f"       MITFAHRT {end_code}")
+    return "\n".join(output).strip() + "\n"
 
-    return "\n".join(lines).rstrip() + "\n"
 
-def main():
-    username = os.getenv("RNV_USER", "").strip()
-    password = os.getenv("RNV_PASS", "").strip()
+# =========================
+# 5. GROUPING (falls mehrere Tage im Feed)
+# =========================
+def group_by_day(data):
+    grouped = defaultdict(list)
 
-    if not username or not password:
-        raise RuntimeError("RNV_USER oder RNV_PASS fehlt.")
+    for e in data:
+        grouped[(e["date"], e["dienst"])].append(e)
 
-    os.makedirs(NOTES_DIR, exist_ok=True)
+    return grouped
 
-    services = load_checkpoint()
-    if not services:
-        print("Keine Dienste in checkpoint.json gefunden.")
-        return
 
-    session = requests.Session()
-    login(session, username, password)
+# =========================
+# 6. MAIN EXPORT
+# =========================
+def export_all(data):
+    grouped = group_by_day(data)
 
-    grouped = {}
-    for s in services:
-        key = f"{s['year']}-{s['month']}-{s['day']}-{s['id']}"
-        grouped[key] = s
+    for (date_str, dienst), entries in grouped.items():
 
-    for s in grouped.values():
-        year = int(s["year"])
-        month = int(s["month"])
-        day = int(s["day"])
-        service_id = s["id"]
+        # Zeit sortieren
+        entries.sort(key=lambda x: x["time"])
 
-        date_obj = datetime(year, month, day)
-        date_str = date_obj.strftime("%Y-%m-%d")
+        content = build_output(entries, date_str, dienst)
 
-        rows = parse_shift_rows(session, date_str, service_id)
-        if not rows:
-            continue
+        filename = f"notes/{date_str.replace('.', '-')}_{dienst}.txt"
 
-        text = build_day_text(date_obj, service_id, rows)
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(content)
 
-        filename = f"{WOCHENTAG_KURZ[date_obj.weekday()]}_{date_obj.strftime('%d-%m-%y')}_{service_id}.txt"
-        out_path = os.path.join(NOTES_DIR, filename)
+        print(f"Geschrieben: {filename}")
 
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(text)
 
-        print(f"Geschrieben: {out_path}")
-
+# =========================
+# 7. EXAMPLE ENTRY FORMAT
+# =========================
 if __name__ == "__main__":
-    main()
+
+    sample_data = [
+        {
+            "date": "Fr, 29.05.26",
+            "dienst": "2061033",
+            "stop": "BHBH",
+            "time": "07:41",
+            "line": "26",
+            "end": "KHFH",
+            "umlauf": "2657"
+        },
+        {
+            "date": "Fr, 29.05.26",
+            "dienst": "2061033",
+            "stop": "BHBP",
+            "time": "11:55",
+            "line": "26",
+            "end": "KHFH",
+            "umlauf": "2657"
+        },
+        {
+            "date": "Fr, 29.05.26",
+            "dienst": "2061033",
+            "stop": "BHBH",
+            "time": "13:21",
+            "line": "26",
+            "end": "KHFH",
+            "umlauf": "2663"
+        },
+        {
+            "date": "Fr, 29.05.26",
+            "dienst": "2061033",
+            "stop": "BHBH",
+            "time": "16:33",
+            "line": "24",
+            "end": "RSRS",
+            "umlauf": "2663"
+        },
+    ]
+
+    export_all(sample_data)
