@@ -253,6 +253,12 @@ def main():
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                     f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                 )
+
+                # NACHRICHT AN MAMA (Neu)
+                msg_mama = (f"Neuer Dienst hinzugefügt\n📅 Wann: {wochentag}, {item['day']}.05.2026\n⏰ Zeit: {item['time']}\n\n*Samets Dienstplan wurde aktualisiert.*")
+                header_mama = {"Click": calendar_link, "Title": "Dienstplan Samet RNV"}
+                requests.post(f"https://ntfy.sh/{NTFY_TOPIC_MAMA}", data=msg_mama.encode("utf-8"), headers=header_mama)
+                
             elif old_dict[item_id] != item:
                 msg = (
                     f"🔔 Dienstplanänderung {item['id']}\n"
@@ -261,6 +267,12 @@ def main():
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                     f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                 )
+ 
+                # NACHRICHT AN MAMA (Neu)
+                msg_mama = (f"⚠️ Samets Dienst hat sich geändert\n📅 Wann: {wochentag}, {item['day']}.05.2026\n⏰ Neue Zeit: {item['time']}\n\n*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*")
+                header_mama = {"Click": calendar_link, "Title": "Dienstplan Samet RNV"}
+                requests.post(f"https://ntfy.sh/{NTFY_TOPIC_MAMA}", data=msg_mama.encode("utf-8"), headers=header_mama)
+                
             else:
                 continue
 
