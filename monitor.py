@@ -210,11 +210,10 @@ def main():
 
             if item_id not in old_dict:
                 msg = (
-                    f"🔔 Neuer Dienst {item['id']}\n"
+                    f"Neuer Dienst {item['id']}\n"
                     f"📅 {wochentag}, {item['day']}.05.2026\n"
                     f"⏰ Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
-                    f"{info['text']}\n\n"
                     f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                 )
             elif old_dict[item_id] != item:
@@ -223,7 +222,6 @@ def main():
                     f"📅 {wochentag}, {item['day']}.05.2026\n"
                     f"⏰ Neue Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
-                    f"{info['text']}\n\n"
                     f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                 )
             else:
