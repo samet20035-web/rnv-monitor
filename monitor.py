@@ -252,12 +252,11 @@ def main():
                     f"📅 {wochentag}, {item['day']}.05.2026\n"
                     f"⏰ Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
-                    f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                 )
 
                 # NACHRICHT AN MAMA (Neu)
                 msg_mama = (f"Neuer Dienst hinzugefügt\n📅 Wann: {wochentag}, {item['day']}.05.2026\n⏰ Zeit: {item['time']}\n\n*Samets Dienstplan wurde aktualisiert.*")
-                header_mama = {"Click": calendar_link, "Title": "Dienstplan Samet RNV"}
+                header_mama = {"Title": "Dienstplan Samet RNV"}
                 requests.post(f"https://ntfy.sh/{NTFY_TOPIC_MAMA}", data=msg_mama.encode("utf-8"), headers=header_mama)
                 
             elif old_dict[item_id] != item:
@@ -266,20 +265,16 @@ def main():
                     f"📅 {wochentag}, {item['day']}.05.2026\n"
                     f"⏰ Neue Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
-                    f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                 )
  
                 # NACHRICHT AN MAMA (Neu)
                 msg_mama = (f"⚠️ Samets Dienst hat sich geändert\n📅 Wann: {wochentag}, {item['day']}.05.2026\n⏰ Neue Zeit: {item['time']}\n\n*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*")
-                header_mama = {"Click": calendar_link, "Title": "Dienstplan Samet RNV"}
+                header_mama = {"Title": "Dienstplan Samet RNV"}
                 requests.post(f"https://ntfy.sh/{NTFY_TOPIC_MAMA}", data=msg_mama.encode("utf-8"), headers=header_mama)
                 
             else:
                 continue
 
-            calendar_link = create_calendar_link(item, info, service_date)
-            headers = {
-                "Click": calendar_link,
                 "Title": "Perdis"
             }
             requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
