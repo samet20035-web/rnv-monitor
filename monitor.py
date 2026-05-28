@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, time, timedelta
 
 BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm"
 LOGIN_URL = f"{BASE_URL}/default.aspx"
