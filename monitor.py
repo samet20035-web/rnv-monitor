@@ -23,32 +23,40 @@ ICS_FILE = os.path.join(BASE_PATH, "dienstplan.ics")
 WOCHENTAG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 def generate_ics(services, session):
-    ics_lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//RNV//Dienstplan//DE", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"]
+    ics_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//RNV//Dienstplan//DE",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH"
+    ]
+
     for s in services:
         date_str = f"2026-05-{s['day']}"
         info = get_service_details(session, date_str, s['id'])
-        
+
         if info["start_time"] and info["start_time"] != "-":
             start_zeit = info["start_time"].replace(":", "") + "00"
             ende_zeit = info["end_time"].replace(":", "") + "00"
-            
-            # Hier bauen wir den Beschreibungstext genau nach deinem Wunsch:
-            # \n steht für einen Zeilenumbruch in der ICS-Datei
-            desc = info['text'].replace(chr(10), '\\n') 
-            
+            desc = info["text"].replace(chr(10), "\\n")
+
             ics_lines.append("BEGIN:VEVENT")
             ics_lines.append(f"SUMMARY:Straßenbahn Dienst {s['id']} ({MEIN_NAME})")
             ics_lines.append(f"DTSTART:202605{s['day']}T{start_zeit}")
             ics_lines.append(f"DTEND:202605{s['day']}T{ende_zeit}")
             ics_lines.append(f"DESCRIPTION:{desc}")
             ics_lines.append("END:VEVENT")
-            
+
     ics_lines.append("END:VCALENDAR")
     return "\n".join(ics_lines)
 
 def get_hidden_fields(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
-    return {inp.get("name"): inp.get("value", "") for inp in soup.find_all("input", type="hidden") if inp.get("name")}
+    return {
+        inp.get("name"): inp.get("value", "")
+        for inp in soup.find_all("input", type="hidden")
+        if inp.get("name")
+    }
 
 def login(session: requests.Session):
     headers = {
@@ -207,19 +215,12 @@ def parse_services(html):
             })
     return services
 
-from datetime import datetime, time
-
 def main():
-    # Prüft die aktuelle UTC-Zeit (GitHub-Server-Standard)
-    # 08:00 - 19:00 Uhr deutsche Zeit entspricht in etwa 06:00 - 17:00 Uhr UTC 
-    # (im Sommer, da wir aktuell UTC+2 haben).
     now = datetime.utcnow().hour
-    
-    # 6 bis 17 Uhr UTC entspricht 8 bis 19 Uhr deutscher Sommerzeit
     if not (6 <= now < 17):
-        print(f"Außerhalb der Zeit. Skript pausiert.")
+        print("Außerhalb der Zeit. Skript pausiert.")
         return
-        
+
     session = requests.Session()
     try:
         login(session)
@@ -243,7 +244,6 @@ def main():
             day_num = int(item["day"])
             date_obj = datetime(2026, 5, day_num)
             wochentag = WOCHENTAG[date_obj.weekday()]
-
             info = get_service_details(session, service_date, item["id"])
 
             if item_id not in old_dict:
@@ -254,50 +254,60 @@ def main():
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                 )
 
-                # NACHRICHT AN MAMA (Neu)
-                msg_mama = (f"Neuer Dienst hinzugefügt\n📅 Wann: {wochentag}, {item['day']}.05.2026\n⏰ Zeit: {item['time']}\n\n*Samets Dienstplan wurde aktualisiert.*")
-                header_mama = {"Title": "Dienstplan Samet RNV"}
-                requests.post(f"https://ntfy.sh/{NTFY_TOPIC_MAMA}", data=msg_mama.encode("utf-8"), headers=header_mama)
-                
-elif old_dict[item_id] != item:
-    msg = (
-        f"🔔 Dienstplanänderung {item['id']}\n"
-        f"📅 {wochentag}, {item['day']}.05.2026\n"
-        f"⏰ Neue Zeit: {item['time']}\n"
-        f"🆔 Dienstnummer: {item['id']}\n\n"
-    )
+                requests.post(
+                    f"https://ntfy.sh/{NTFY_TOPIC}",
+                    data=msg.encode("utf-8"),
+                    headers={"Title": "Perdis"}
+                )
 
-    headers = {"Title": "Perdis"}
+                msg_mama = (
+                    f"Neuer Dienst hinzugefügt\n"
+                    f"📅 Wann: {wochentag}, {item['day']}.05.2026\n"
+                    f"⏰ Zeit: {item['time']}\n\n"
+                    f"*Samets Dienstplan wurde aktualisiert.*"
+                )
 
-    requests.post(
-        f"https://ntfy.sh/{NTFY_TOPIC}",
-        data=msg.encode("utf-8"),
-        headers=headers
-    )
+                requests.post(
+                    f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
+                    data=msg_mama.encode("utf-8"),
+                    headers={"Title": "Dienstplan Samet RNV"}
+                )
 
-    msg_mama = (
-        f"⚠️ Samets Dienst hat sich geändert\n"
-        f"📅 Wann: {wochentag}, {item['day']}.05.2026\n"
-        f"⏰ Neue Zeit: {item['time']}\n\n"
-        f"*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*"
-    )
+            elif old_dict[item_id] != item:
+                msg = (
+                    f"🔔 Dienstplanänderung {item['id']}\n"
+                    f"📅 {wochentag}, {item['day']}.05.2026\n"
+                    f"⏰ Neue Zeit: {item['time']}\n"
+                    f"🆔 Dienstnummer: {item['id']}\n\n"
+                )
 
-    requests.post(
-        f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
-        data=msg_mama.encode("utf-8"),
-        headers={"Title": "Dienstplan Samet RNV"}
-    )
-                
+                requests.post(
+                    f"https://ntfy.sh/{NTFY_TOPIC}",
+                    data=msg.encode("utf-8"),
+                    headers={"Title": "Perdis"}
+                )
+
+                msg_mama = (
+                    f"⚠️ Samets Dienst hat sich geändert\n"
+                    f"📅 Wann: {wochentag}, {item['day']}.05.2026\n"
+                    f"⏰ Neue Zeit: {item['time']}\n\n"
+                    f"*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*"
+                )
+
+                requests.post(
+                    f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
+                    data=msg_mama.encode("utf-8"),
+                    headers={"Title": "Dienstplan Samet RNV"}
+                )
+
             else:
                 continue
 
-        # ICS Datei generieren und schreiben
         ics_data = generate_ics(current, session)
         with open(ICS_FILE, "w", encoding="utf-8") as f:
             f.write(ics_data)
         print("ICS-Datei aktualisiert.")
 
-        # Checkpoint speichern
         with open(CHECKPOINT_FILE, "w") as f:
             json.dump(current, f, indent=2)
         print("Checkpoint gespeichert.")
