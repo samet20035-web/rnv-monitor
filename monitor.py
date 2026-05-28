@@ -291,11 +291,17 @@ def main():
                     f"*Samets Dienstplan wurde aktualisiert.*"
                 )
 
-                requests.post(
+                print("NTFY_TOPIC_MAMA =", repr(NTFY_TOPIC_MAMA))
+
+                resp = requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
                     data=msg_mama.encode("utf-8"),
-                    headers={"Title": "Dienstplan Samet RNV"}
+                    headers={"Title": "Dienstplan Samet RNV"},
+                    timeout=10,
                 )
+                
+                print("ntfy status:", resp.status_code)
+                print("ntfy body:", resp.text[:300])
 
             elif old_dict[item_id] != item:
                 msg = (
