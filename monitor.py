@@ -136,7 +136,7 @@ def get_service_details(session, date_str, service_id):
 
     def clean_ort(ort: str, typ: str) -> str:
         ort = (ort or "").strip()
-        if "Bth. Betriebshof" in ort or "Bth Betriebshof" in ort:
+        if "Bth. HD Betriebshof" in ort or "Bth HD Betriebshof" in ort:
             return "Betriebshof (Ausrücken)" if typ == "start" else "Betriebshof (Einrücken)"
         return ort
 
