@@ -34,21 +34,21 @@ jobs:
           python monitor.py
 
       - name: Commit changes
-          run: |
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           
-            # Wir fügen sowohl die checkpoint.json als auch die dienstplan.ics hinzu
-            # Wir prüfen mit einem "ls", ob eine der Dateien existiert, um Fehler zu vermeiden
-            if [ -f checkpoint.json ] || [ -f dienstplan.ics ]; then
-              git add checkpoint.json dienstplan.ics
-              # git diff --cached prüft, ob wirklich Änderungen im Staging-Bereich sind
-              if ! git diff --cached --quiet; then
-                git commit -m "Update Dienstplan und Checkpoint"
-                git push
-              else
-                echo "Keine Änderungen zum Committen gefunden."
-              fi
+          # Wir fügen sowohl die checkpoint.json als auch die dienstplan.ics hinzu
+          # Wir prüfen, ob mindestens eine der Dateien existiert, um Fehler zu vermeiden
+          if [ -f checkpoint.json ] || [ -f dienstplan.ics ]; then
+            git add checkpoint.json dienstplan.ics
+            # git diff --cached prüft, ob wirklich Änderungen im Staging-Bereich sind
+            if ! git diff --cached --quiet; then
+              git commit -m "Update Dienstplan und Checkpoint"
+              git push
             else
-              echo "Keine Dateien (checkpoint.json oder dienstplan.ics) zum Committen vorhanden."
+              echo "Keine Änderungen zum Committen gefunden."
             fi
+          else
+            echo "Keine Dateien (checkpoint.json oder dienstplan.ics) zum Committen vorhanden."
+          fi
