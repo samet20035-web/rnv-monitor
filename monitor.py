@@ -237,18 +237,15 @@ def main():
         login(session)
        # 2. Dynamisch beide Monate laden
         all_services = []
-        
-        # Aktueller Monat
+        # WICHTIG: Hier jetzt die Parameter mitgeben!
         html_curr = session.get(ROSTER_URL).text
-        all_services.extend(parse_services(html_curr))
+        all_services.extend(parse_services(html_curr, "05", "2026"))
         
-        # Nächster Monat (berechnet das Datum des 28. des nächsten Monats)
         heute = datetime.utcnow()
         naechster_monat = (heute.replace(day=28) + timedelta(days=5)).replace(day=28)
-        datum_str = naechster_monat.strftime("%Y-%m-%d")
-        
-        html_next = session.get(f"{ROSTER_URL}?{datum_str}").text
-        all_services.extend(parse_services(html_next))
+        html_next = session.get(f"{ROSTER_URL}?{naechster_monat.strftime('%Y-%m-%d')}").text
+        # WICHTIG: Hier jetzt die dynamischen Parameter für den nächsten Monat!
+        all_services.extend(parse_services(html_next, naechster_monat.strftime("%m"), naechster_monat.strftime("%Y")))
         
         # 3. Dubletten entfernen (falls ein Dienst in beiden Monaten auftaucht)
         unique_services = {f"{s['day']}-{s['id']}": s for s in all_services}.values()
