@@ -32,7 +32,13 @@ def generate_ics(services, session):
     ]
 
     for s in services:
-        date_str = f"2026-05-{s['day']}"
+        # Dynamische Variablen aus dem Dienst-Objekt nutzen
+        jahr = s.get('year', '2026')
+        monat = s.get('month', '05')
+        tag = s['day'].zfill(2) # Stellt sicher, dass aus '1' -> '01' wird
+        
+        # Abfrage-Datum für die Details (muss für die RNV Seite passen)
+        date_str = f"{jahr}-{monat}-{tag}"
         info = get_service_details(session, date_str, s['id'])
 
         if info["start_time"] and info["start_time"] != "-":
@@ -42,14 +48,15 @@ def generate_ics(services, session):
 
             ics_lines.append("BEGIN:VEVENT")
             ics_lines.append(f"SUMMARY:Straßenbahn Dienst {s['id']} ({MEIN_NAME})")
-            ics_lines.append(f"DTSTART:202605{s['day']}T{start_zeit}")
-            ics_lines.append(f"DTEND:202605{s['day']}T{ende_zeit}")
+            # Dynamische Datums-Zusammensetzung für den Kalender
+            ics_lines.append(f"DTSTART:{jahr}{monat}{tag}T{start_zeit}")
+            ics_lines.append(f"DTEND:{jahr}{monat}{tag}T{ende_zeit}")
             ics_lines.append(f"DESCRIPTION:{desc}")
             ics_lines.append("END:VEVENT")
 
     ics_lines.append("END:VCALENDAR")
     return "\n".join(ics_lines)
-
+    
 def get_hidden_fields(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     return {
@@ -195,7 +202,7 @@ def get_service_details(session, date_str, service_id):
         "end_ort": end_ort
     }
 
-def parse_services(html):
+def parse_services(html, month, year):
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id=lambda x: x and "calRoster" in x)
     if not table:
@@ -208,10 +215,14 @@ def parse_services(html):
             day_str = td.find("strong").get_text(strip=True)[:2]
             span = td.find("span")
             time_val = span.get_text(strip=True) if span else ""
+            
+            # HIER werden Jahr und Monat ins Dictionary geschrieben:
             services.append({
                 "day": day_str,
                 "time": time_val,
-                "id": title.split("Dienst:")[1].split("•")[0].strip()
+                "id": title.split("Dienst:")[1].split("•")[0].strip(),
+                "month": month,
+                "year": year
             })
     return services
 
