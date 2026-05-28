@@ -17,6 +17,7 @@ MEIN_NAME = "Samet"
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
+ICS_FILE = os.path.join(BASE_PATH, "dienstplan.ics")
 
 WOCHENTAG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
@@ -251,12 +252,17 @@ def main():
             }
             requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
 
-        with open(CHECKPOINT_FILE, "w") as f:
-            json.dump(current, f, indent=2)
-        print("Checkpoint gespeichert.")
+        ics_data = generate_ics(current, session)
+            with open(ICS_FILE, "w", encoding="utf-8") as f:
+                f.write(ics_data)
+            print("ICS-Datei aktualisiert.")
 
-    except Exception as e:
-        print(f"KRITISCHER FEHLER: {e}")
+            with open(CHECKPOINT_FILE, "w") as f:
+                json.dump(current, f, indent=2)
+            print("Checkpoint gespeichert.")
+
+        except Exception as e:
+            print(f"KRITISCHER FEHLER: {e}")
 
 if __name__ == "__main__":
     main()
