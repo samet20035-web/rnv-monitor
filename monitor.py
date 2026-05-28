@@ -15,7 +15,7 @@ START_URL = f"{LOGIN_URL}?TestingCookie=1"
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "DEIN_TOPIC")
 USERNAME = os.getenv("RNV_USER", "DEIN_USER")
 PASSWORD = os.getenv("RNV_PASS", "DEIN_PASS")
-MEIN_NAME = "Samet"  # Dein Name für den Titel
+MEIN_NAME = "Samet"
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
@@ -52,12 +52,10 @@ def login(session: requests.Session):
         raise Exception("Login fehlgeschlagen.")
 
 def create_calendar_link(service, details, date_str=None):
-    """Erstellt einen Google-Kalender-Link mit Titel, Zeit und Beschreibung."""
     try:
         if date_str is None:
             date_str = "2026-05-29"
         
-        # Zeitbereich zusammenfassen (z.B. 14-16 Uhr statt 14-15 + 15-16)
         time_str = service['time'].strip()
         time_str = time_str.replace("–", "-").replace("—", "-")
         parts = time_str.split("-")
@@ -65,14 +63,12 @@ def create_calendar_link(service, details, date_str=None):
             return "https://google.com"
         
         start_time = parts[0].strip()
-        end_time = parts[-1].strip()  # Letzter Wert = Ende aller Pausen
+        end_time = parts[-1].strip()
         
         s_zeit = start_time.replace(":", "") + "00"
         e_zeit = end_time.replace(":", "") + "00"
         
         date_compact = date_str.replace("-", "")
-        
-        # Titel wie gewünscht: "Straßenbahn Dienst [Nummer] (Samet)"
         title = f"Straßenbahn Dienst {service['id']} ({MEIN_NAME})"
         
         params = {
@@ -87,7 +83,6 @@ def create_calendar_link(service, details, date_str=None):
         return "https://google.com"
 
 def get_service_details(session, date_str, service_id):
-    """Holt die Details für einen Dienst (Beginn, Pausen, Ende, Orte)."""
     session.get(ROSTER_URL)
     
     payload = {
@@ -120,33 +115,32 @@ def get_service_details(session, date_str, service_id):
     end_zeit = tds_end[3].text.strip() if len(tds_end) > 3 else "-"
     end_ort_raw = tds_end[4].text.strip() if len(tds_end) > 4 else "-"
     
-    # Ort anpassen: Bth. Betriebshof → Betriebshof (Ausrücken) / (Einrücken)
+    # Nur bei "Bth. Betriebshof" → (Ausrücken)/(Einrücken)
     def adapt_ort(ort, typ):
-        ort_clean = ort.replace("Bth. HD Bergheim", "").replace("Betriebshof", "").strip()
-        if "Betriebshof" in ort or "Bth" in ort:
+        if "Bth. Betriebshof" in ort or "Bth Betriebshof" in ort:
             if typ == "start":
-                return f"Betriebshof (Ausrücken)"
+                return "Betriebshof (Ausrücken)"
             else:
-                return f"Betriebshof (Einrücken)"
+                return "Betriebshof (Einrücken)"
         return ort
     
     start_ort = adapt_ort(start_ort_raw, "start")
     end_ort = adapt_ort(end_ort_raw, "end")
 
-    # Pausen sammeln
+    # ALLE Pausen sammeln (ohne Filter auf "bezahlte/unbezahlte")
     pausen = []
     for r in dienst_rows:
         tds = r.find_all("td")
-        if len(tds) > 9 and ("Pause" in tds[9].text or "pause" in tds[9].text.lower()):
-            pause_von = tds[1].text.strip() if len(tds) > 1 else "-"
-            pause_bis = tds[3].text.strip() if len(tds) > 3 else "-"
-            pausen.append((pause_von, pause_bis))
+        if len(tds) > 9:
+            tätigkeits_art = tds[9].text.lower()
+            # Nur isso: irgendeine Form von "Pause" enthalten
+            if "pause" in tätigkeits_art:
+                pause_von = tds[1].text.strip() if len(tds) > 1 else "-"
+                pause_bis = tds[3].text.strip() if len(tds) > 3 else "-"
+                pausen.append((pause_von, pause_bis))
     
-    # Pausen formatieren: bei mehreren 1. Pause, 2. Pause, ...
     pausen_str = ""
     if pausen:
-        # Wenn nur eine Pause: einfach "1. Pause: ..."
-        # Wenn mehrere: jede Pause durchnummerieren
         for i, (von, bis) in enumerate(pausen, 1):
             pausen_str += f"{i}. Pause: {von} - {bis} Uhr\n"
         pausen_str = pausen_str.rstrip("\n")
@@ -191,19 +185,14 @@ def main():
         if current != old:
             for item in current:
                 if item not in old:
-                    # Datum aus dem Tag berechnen
                     service_date = f"2026-05-{item['day']}"
                     
-                    # Wochentag bestimmen (0=Montag, 4=Freitag, etc.)
-                    day_num = int(item['day']) - 1  # 1 = 29.05.2026 = Freitag = index 4
-                    # Alternativ korrekt berechnen:
-                    date_obj = datetime(2026, 5, day_num + 1)
+                    day_num = int(item['day'])
+                    date_obj = datetime(2026, 5, day_num)
                     wochentag = WOCHENTAG[date_obj.weekday()]
                     
-                    # Details abrufen
                     details = get_service_details(session, service_date, item['id'])
         
-                    # Nachrichtenaufbau mit Wochentag
                     msg = (
                         f"Neuer Dienst {item['id']}\n"
                         f"📅 {wochentag}, {item['day']}.05.2026\n"
@@ -212,9 +201,11 @@ def main():
                         f"👉 Tippe auf die Nachricht, um den Dienst zum Kalender hinzuzufügen!"
                     )
         
-                    # Kalenderlink mit allen Parametern
                     calendar_link = create_calendar_link(item, details, service_date)
-                    headers = {"Click": calendar_link}
+                    headers = {
+                        "Click": calendar_link,
+                        "Title": "Perdis"
+                    }
                     
                     requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"), headers=headers)
                     print(f"Nachricht gesendet für Dienst {item['id']}")
