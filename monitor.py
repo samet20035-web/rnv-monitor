@@ -207,17 +207,18 @@ def parse_services(html):
     return services
 
 from datetime import datetime, time
-import pytz # Falls noch nicht installiert: pip install pytz
 
 def main():
-    # Zeitprüfung: Nur zwischen 08:00 und 19:00 Uhr deutscher Zeit ausführen
-    tz = pytz.timezone('Europe/Berlin')
-    now = datetime.now(tz).time()
+    # Prüft die aktuelle UTC-Zeit (GitHub-Server-Standard)
+    # 08:00 - 19:00 Uhr deutsche Zeit entspricht in etwa 06:00 - 17:00 Uhr UTC 
+    # (im Sommer, da wir aktuell UTC+2 haben).
+    now = datetime.utcnow().hour
     
-    if not (time(8, 0) <= now <= time(19, 0)):
-        print(f"Außerhalb der Zeit ({now}). Skript pausiert.")
-        return # Beendet das Skript ohne Fehler
-
+    # 6 bis 17 Uhr UTC entspricht 8 bis 19 Uhr deutscher Sommerzeit
+    if not (6 <= now < 17):
+        print(f"Außerhalb der Zeit. Skript pausiert.")
+        return
+        
     session = requests.Session()
     try:
         login(session)
