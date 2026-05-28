@@ -69,4 +69,10 @@ DTSTART:20260529T060700
 DTEND:20260529T150300
 DESCRIPTION:Beginn: 06:07 Uhr (Bth. HD Bergheim)\n1. Pause: 09:53 - 10:23 Uhr\n2. Pause: 10:23 - 10:51 Uhr\n3. Pause: 13:21 - 13:41 Uhr\nEnde: 15:03 Uhr (Betriebshof)
 END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Straßenbahn Dienst 2061027 (Samet)
+DTSTART:20260601T115400
+DTEND:20260601T200300
+DESCRIPTION:Beginn: 11:54 Uhr (Bismarckplatz)\n1. Pause: 16:07 - 16:37 Uhr\n2. Pause: 16:37 - 16:47 Uhr\nEnde: 20:03 Uhr (Bth. HD Bergheim)
+END:VEVENT
 END:VCALENDAR
