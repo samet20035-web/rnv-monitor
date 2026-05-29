@@ -1,5 +1,5 @@
 # Dienstübersicht – Samet
-*Zuletzt aktualisiert: 28.05.2026 19:39 UTC*
+*Zuletzt aktualisiert: 29.05.2026 17:58 UTC*
 
 ## Samstag, 02.05.26  ·  Dienst 2061036
 
@@ -381,6 +381,24 @@ KHFH  14:27  26  HHHS  →  KHFH
 HHHS  14:57  24  BHBH
 ────────────────────────────
 06:07 – 15:03  (8h56min)
+```
+
+## Samstag, 30.05.26  ·  Dienst 2061030-11
+
+```
+Sa, 30.05.26   2061030-11
+────────────────────────────
+BHBE  08:35  22  EHKS  →  BHBP
+EHKS  09:02  22  BHBP  →  EHKS
+BHBP  09:27  22  EHKS  →  BHBP
+EHKS  10:02  22  BHBP  →  EHKS
+BHBP  10:27  22  EHKS  →  BHBP
+EHKS  11:02  22  BHBP  →  EHKS
+BHBP  11:27  22  EHKS  →  BHBP
+EHKS  12:02  22  BHBP  →  EHKS
+BHBP  12:27  22  BHHF  →  EHKS
+────────────────────────────
+08:35 – 12:32  (3h57min)
 ```
 
 ## Montag, 01.06.26  ·  Dienst 2061027
