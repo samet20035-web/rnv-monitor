@@ -46,8 +46,8 @@ def generate_ics(services, session):
 
             ics_lines.append("BEGIN:VEVENT")
             ics_lines.append(f"SUMMARY:Straßenbahn Dienst {s['id']} ({MEIN_NAME})")
-            ics_lines.append(f"DTSTART:{jahr}{monat}{tag}T{start_zeit}")
-            ics_lines.append(f"DTEND:{jahr}{monat}{tag}T{ende_zeit}")
+            ics_lines.append(f"DTSTART;TZID=Europe/Berlin:{jahr}{monat}{tag}T{start_zeit}")
+            ics_lines.append(f"DTEND;TZID=Europe/Berlin:{jahr}{monat}{tag}T{ende_zeit}")
             ics_lines.append(f"DESCRIPTION:{desc}")
             ics_lines.append("END:VEVENT")
 
