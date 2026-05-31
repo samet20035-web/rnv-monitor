@@ -72,8 +72,8 @@ END:VEVENT
 BEGIN:VEVENT
 SUMMARY:Straßenbahn Dienst 2061030-11 (Samet)
 DTSTART;TZID=Europe/Berlin:20260530T083500
-DTEND;TZID=Europe/Berlin:20260530T123200
-DESCRIPTION:Beginn: 08:35 Uhr (Bth. HD Bergheim)\nKeine Pausen\nEnde: 12:32 Uhr (HD Hauptbahnhof)
+DTEND;TZID=Europe/Berlin:20260530T133500
+DESCRIPTION:Beginn: 08:35 Uhr (Bth. HD Bergheim)\nKeine Pausen\nEnde: 13:35 Uhr ()
 END:VEVENT
 BEGIN:VEVENT
 SUMMARY:Straßenbahn Dienst 2061027 (Samet)
