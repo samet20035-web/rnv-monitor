@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import urllib.parse
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 
 BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm"
 LOGIN_URL = f"{BASE_URL}/default.aspx"
@@ -55,9 +55,9 @@ def generate_ics(services, session):
     return "\n".join(ics_lines)
 
 def get_current_month_year():
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return now.strftime("%m"), now.strftime("%Y")
-    
+
 def get_hidden_fields(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     return {
@@ -227,7 +227,7 @@ def parse_services(html, month, year):
     return services
 
 def main():
-    now = datetime.utcnow().hour
+    now = datetime.now(timezone.utc).hour
     if not (6 <= now < 17):
         print("Außerhalb der Zeit. Skript pausiert.")
         return
@@ -261,6 +261,17 @@ def main():
 
         old_dict = {item["id"]: item for item in old}
         current_dict = {item["id"]: item for item in current}
+
+        today = datetime.now(timezone.utc).date()
+        service_date_obj = datetime(
+            int(item["year"]),
+            int(item["month"]),
+            int(item["day"])
+        ).date()
+
+        if service_date_obj < today:
+            print(f"Vergangener Eintrag übersprungen: {item['id']} am {service_date_obj}")
+            continue
 
         for item_id, item in current_dict.items():
             service_date = f"{item['year']}-{item['month']}-{item['day']}"
