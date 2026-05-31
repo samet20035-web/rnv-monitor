@@ -27,6 +27,12 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4
 
+      - name: Sync remote
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
+
       - name: Run monitor
         env:
           RNV_USER: ${{ secrets.RNV_USER }}
@@ -38,11 +44,6 @@ jobs:
 
       - name: Commit changes
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git pull --rebase origin main
-
           FILES_TO_ADD=""
           if [ -f "checkpoint.json" ]; then FILES_TO_ADD="$FILES_TO_ADD checkpoint.json"; fi
           if [ -f "dienstplan.ics" ]; then FILES_TO_ADD="$FILES_TO_ADD dienstplan.ics"; fi
