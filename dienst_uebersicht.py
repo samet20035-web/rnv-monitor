@@ -1,95 +1,130 @@
+"""
+Dienst-Übersicht Generator für RNV WebComm
+Erstellt pro Dienst eine eigene .txt-Datei unter dienste/YYYY-MM-DD_DIENSTNR.txt
+
+Format je Datei:
+  Fr, 29.05.26   2061036
+  ────────────────────────────
+  BHBE  06:07  24  HHHS
+        => 2662
+  BHBH  09:53  24  RSRS
+
+  BHBH  10:51  24  HHHS
+        => 2663
+  BHBH  13:21  26  KHFH
+  ...
+  ────────────────────────────
+  06:07 – 15:03  (8h56min)
+
+Logik:
+  - Wendezeit → ignorieren
+  - Pro Umlauf: erste Lenkzeit = Ausrücken/Start, letzte Lenkzeit = Einrücken/Ende
+  - Umlaufwechsel → "      => UMLAUFNR" nach der ersten Zeile des Umlauts
+  - Pause → Leerzeile zwischen den Umlauf-Blöcken (Pause selbst nicht anzeigen)
+  - Jede separate .txt-Datei pro Dienst im Ordner "dienste/"
+"""
+
 import os
+import re
 import json
 import requests
+import time as time_mod
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, date
 
-# ── Konfiguration (identisch zu monitor.py, damit Secrets wiederverwendet werden) ──
-BASE_URL    = "https://fahrerauskunft.rnv-online.de/WebComm"
-LOGIN_URL   = f"{BASE_URL}/default.aspx"
-ROSTER_URL  = f"{BASE_URL}/roster.aspx"
-START_URL   = f"{LOGIN_URL}?TestingCookie=1"
+# ── Konfiguration ─────────────────────────────────────────────────────────────
+BASE_URL   = "https://fahrerauskunft.rnv-online.de/WebComm"
+LOGIN_URL  = f"{BASE_URL}/default.aspx"
+ROSTER_URL = f"{BASE_URL}/roster.aspx"
+START_URL  = f"{LOGIN_URL}?TestingCookie=1"
 
 USERNAME  = os.getenv("RNV_USER", "")
 PASSWORD  = os.getenv("RNV_PASS", "")
 MEIN_NAME = "Samet"
 
-BASE_PATH        = os.path.dirname(os.path.abspath(__file__))
-CHECKPOINT_FILE  = os.path.join(BASE_PATH, "checkpoint.json")   # wird von monitor.py geschrieben
-OUTPUT_MD        = os.path.join(BASE_PATH, "dienst_uebersicht.md")
-OUTPUT_TXT       = os.path.join(BASE_PATH, "dienst_uebersicht.txt")
+BASE_PATH       = os.path.dirname(os.path.abspath(__file__))
+CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
+OUTPUT_DIR      = os.path.join(BASE_PATH, "dienste")   # ← ein Ordner, viele Dateien
 
-WOCHENTAG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 WOCHENTAG_KURZ = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
-# ── Haltestellenkürzel → Name ──────────────────────────────────────────────────
+# ── Haltestellenkürzel ─────────────────────────────────────────────────────────
 STOPS = {
-    "BHBE": "Bth. HD Bergheim",    "BHBP": "Bismarckplatz",
-    "BHBH": "Betriebshof",         "KHFH": "Kirchheim Friedhof",
-    "HHHS": "Heiligenbergschule",  "HHHT": "Hans-Thoma-Platz",
-    "RSRS": "Rohrbach Süd",        "BHHF": "HD Hauptbahnhof",
-    "BHCA": "Campus Bergheim",     "BHWI": "Bth. Wieblinger Weg",
-    "WSBF": "S-Bhf Weststadt/Südstadt",
-    "NFCN": "Campus Im Neuenheimer Feld",
-    "NFZO": "Zoo",                 "NFSB": "Schwimmbad",
-    "NFKO": "Kopfklinik",          "NFJH": "Jugendherberge",
-    "SBBF": "S-Bhf Schlierbach/Ziegelhausen",
-    "SBOK": "S-Bhf Orthopädie",    "KHBF": "S-Bhf Kirchheim/Rohrbach",
-    "KHRH": "Kirchheim Rathaus",   "KHKH": "Kirchheimer Hof",
-    "KHHS": "Hagellachstraße",     "EHKS": "Kirchheimer Straße",
-    "HHBG": "Heiligenberg",        "HHHB": "Heiligenbergstraße",
-    "HHJF": "Johann-Fischer-Str.", "HHTG": "Tiefburg",
-    "HHTB": "Turnerbrunnen",       "HHMS": "Mühltalstraße",
-    "RBMA": "Rohrbach Markt",      "RBKI": "Rohrbach Kirche",
-    "RBFR": "Rohrbach Friedhof",   "RBRH": "Rohrbach Rathaus",
-    "RBNV": "Rohrbach NVZ",        "RBSP": "Sickingenplatz",
-    "ASAB": "Alte Brücke",         "ASEP": "Friedrich-Ebert-Platz",
-    "ASPK": "Peterskirche",        "ASRB": "Rathaus/Bergbahn",
-    "ASSH": "Stadthalle",          "ASUP": "Universitätsplatz",
-    "ASBF": "S-Bhf Altstadt",      "NHBG": "Bunsengymnasium",
-    "NHTH": "Theodor-Heuss-Brücke","NHTP": "Technologiepark",
-    "SRBF": "Schriesheim Bahnhof", "BSET": "Eppelheimer Terrasse",
-    "SSET": "Eppelheimer Terrasse","SSMD": "Marlene-Dietrich-Platz",
-    "SSMT": "Mark-Twain-Center",   "SSRS": "HD Rheinstraße",
-    "LEFH": "Leimen Friedhof",     "LEGP": "Leimen Georgi-Marktplatz",
-    "LEKC": "Leimen Kurpfalz-Centrum",
+    "Bth. HD Bergheim":             "BHBE",
+    "Bth HD Bergheim":              "BHBE",
+    "Bismarckplatz":                "BHBP",
+    "Betriebshof":                  "BHBH",
+    "Bth. HD Betriebshof":          "BHBH",
+    "Bth HD Betriebshof":           "BHBH",
+    "Kirchheim Friedhof":           "KHFH",
+    "Heiligenbergschule":           "HHHS",
+    "Hans-Thoma-Platz":             "HHHT",
+    "Rohrbach Süd":                 "RSRS",
+    "HD Hauptbahnhof":              "BHHF",
+    "Campus Bergheim":              "BHCA",
+    "Bth. Wieblinger Weg":          "BHWI",
+    "S-Bhf Weststadt/Südstadt":     "WSBF",
+    "Campus Im Neuenheimer Feld":   "NFCN",
+    "Zoo":                          "NFZO",
+    "Schwimmbad":                   "NFSB",
+    "Kopfklinik":                   "NFKO",
+    "Jugendherberge":               "NFJH",
+    "S-Bhf Schlierbach/Ziegelhausen": "SBBF",
+    "S-Bhf Orthopädie":             "SBOK",
+    "S-Bhf Kirchheim/Rohrbach":     "KHBF",
+    "Kirchheim Rathaus":            "KHRH",
+    "Kirchheimer Hof":              "KHKH",
+    "Hagellachstraße":              "KHHS",
+    "Kirchheimer Straße":           "EHKS",
+    "Heiligenberg":                 "HHBG",
+    "Heiligenbergstraße":           "HHHB",
+    "Johann-Fischer-Str.":          "HHJF",
+    "Tiefburg":                     "HHTG",
+    "Turnerbrunnen":                "HHTB",
+    "Mühltalstraße":                "HHMS",
+    "Rohrbach Markt":               "RBMA",
+    "Rohrbach Kirche":              "RBKI",
+    "Rohrbach Friedhof":            "RBFR",
+    "Rohrbach Rathaus":             "RBRH",
+    "Rohrbach NVZ":                 "RBNV",
+    "Sickingenplatz":               "RBSP",
+    "Alte Brücke":                  "ASAB",
+    "Friedrich-Ebert-Platz":        "ASEP",
+    "Peterskirche":                 "ASPK",
+    "Rathaus/Bergbahn":             "ASRB",
+    "Stadthalle":                   "ASSH",
+    "Universitätsplatz":            "ASUP",
+    "S-Bhf Altstadt":               "ASBF",
+    "Bunsengymnasium":              "NHBG",
+    "Theodor-Heuss-Brücke":         "NHTH",
+    "Technologiepark":              "NHTP",
+    "Schriesheim Bahnhof":          "SRBF",
+    "Eppelheimer Terrasse":         "BSET",
+    "Marlene-Dietrich-Platz":       "SSMD",
+    "Mark-Twain-Center":            "SSMT",
+    "HD Rheinstraße":               "SSRS",
+    "Leimen Friedhof":              "LEFH",
+    "Leimen Georgi-Marktplatz":     "LEGP",
+    "Leimen Kurpfalz-Centrum":      "LEKC",
 }
 
-# Name → Kürzel (für HTML-Parsing)
-STOPS_REV = {v.lower(): k for k, v in STOPS.items()}
 
-
-# ── Wendelogik ─────────────────────────────────────────────────────────────────
-def get_terminus(linie: str, nach_code: str, dow: int) -> str | None:
-    """Gibt das Zielkürzel zurück, wohin der Zug nach dem Ausstieg weiterfährt."""
-    mo_fr = 1 <= dow <= 5
-    sa    = dow == 6
-
-    if linie == "26":
-        if mo_fr:
-            if nach_code == "KHFH": return "HHHS"
-            if nach_code == "HHHS": return "KHFH"
-        if sa:
-            if nach_code == "KHFH": return "HHHT"
-            if nach_code == "HHHT": return "KHFH"
-
-    if linie == "24" and mo_fr:
-        if nach_code == "RSRS": return "HHHS"
-        if nach_code == "HHHS": return "RSRS"
-
-    if linie == "22":
-        if nach_code in ("EHKS", "BSET", "SSET", "EHRH", "EHHS"): return "BHBP"
-        if nach_code in ("BHBP", "BHHF", "WSBF"):                  return "EHKS"
-
-    if linie == "21":
-        if nach_code in ("HHHT", "SRBF"): return "BHBP"
-        if nach_code == "BHBP":           return "HHHT"
-
-    if linie == "23":
-        if nach_code == "BHBP": return "LEFH"
-        if nach_code == "LEFH": return "BHBP"
-
-    return None
+def ort_zu_kuerzel(name: str) -> str:
+    """Wandelt Haltestellen-Klarnamen in 4-Zeichen-Kürzel um."""
+    name = (name or "").strip()
+    if not name or name == "\xa0":
+        return "????"
+    # Direkter Lookup
+    if name in STOPS:
+        return STOPS[name]
+    # Fallback: Teilstring-Suche (case-insensitiv)
+    name_lower = name.lower()
+    for key, code in STOPS.items():
+        if key.lower() in name_lower or name_lower in key.lower():
+            return code
+    # Letzter Fallback: erste 4 Buchstaben
+    letters = "".join(c for c in name.upper() if c.isalpha())
+    return letters[:4].ljust(4, "?") if letters else "????"
 
 
 # ── Login ──────────────────────────────────────────────────────────────────────
@@ -117,7 +152,6 @@ def login(session: requests.Session):
     session.get(START_URL, headers=headers)
     r = session.get(LOGIN_URL, headers=headers)
     hidden = get_hidden_fields(r.text)
-
     payload = {
         **hidden,
         "__EVENTTARGET": "ctl00$cntMainBody$lgnView$lgnLogin$LoginButton",
@@ -131,50 +165,34 @@ def login(session: requests.Session):
         raise RuntimeError("Login fehlgeschlagen")
 
 
-# ── Name → Kürzel ──────────────────────────────────────────────────────────────
-def name_to_code(name: str) -> str:
-    """Versucht einen Haltestellennamen in ein 4-stelliges Kürzel umzuwandeln."""
-    if not name or not name.strip():
-        return "????"
-    n = name.strip()
-    # direkte Suche im Reverse-Dict
-    code = STOPS_REV.get(n.lower())
-    if code:
-        return code
-    # Fallback: ersten 4 Buchstaben großgeschrieben
-    letters = "".join(c for c in n.upper() if c.isalpha())
-    return letters[:4] if len(letters) >= 4 else letters.ljust(4, "?")
-
-
-# ── HTML-Tabelle parsen ────────────────────────────────────────────────────────
-def parse_shift_html(html: str, date_str: str, dienst_id: str) -> list[dict]:
+# ── HTML parsen → Umlauf-Blöcke ───────────────────────────────────────────────
+def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
     """
-    Parst die shift.aspx-HTML-Tabelle und gibt eine Liste von Blöcken zurück:
-      - {"type": "fahrt",   "von": CODE, "zeit": "HH:MM", "nach": CODE, "linie": "26", "umlauf": "2657"}
-      - {"type": "pause",   "von": "HH:MM", "bis": "HH:MM", "ort": NAME, "art": "Pause Unbezahlt"}
-      - {"type": "umlauf",  "nr": "2657"}
+    Liest die shift.aspx-Tabelle und gruppiert nach Umläufen.
+
+    Rückgabe: Liste von Umlauf-Dicts:
+      {
+        "nr":    "2662",
+        "start": {"zeit": "06:07", "von": "BHBE", "linie": "24"},
+        "ende":  {"zeit": "09:53", "nach": "BHBH", "linie": "24"},
+        "pause_danach": True/False   ← True wenn danach eine Pause folgt
+      }
     """
     soup = BeautifulSoup(html, "html.parser")
     tbl  = soup.find("table", id="ctl00_cntMainBody_lstDienstinfo")
     if not tbl:
         return []
 
-    rows = tbl.find_all("tr")
-    segments = []
-
-    for row in rows:
-        cells = [td.get_text(strip=True) for td in row.find_all("td")]
+    # Alle relevanten Zeilen des gesuchten Dienstes sammeln
+    rows = []
+    for tr in tbl.find_all("tr"):
+        cells = [td.get_text(strip=True).replace("\xa0", "").strip()
+                 for td in tr.find_all("td")]
         if len(cells) < 10:
             continue
-        # Leerzeilen überspringen
-        if not cells[0] or cells[0] == "\xa0":
-            continue
-        # Nur Zeilen des gesuchten Dienstes
         if cells[0] != dienst_id:
             continue
-
-        segments.append({
-            "dienst":  cells[0],
+        rows.append({
             "von_zeit": cells[1],
             "von_ort":  cells[2],
             "bis_zeit": cells[3],
@@ -184,234 +202,211 @@ def parse_shift_html(html: str, date_str: str, dienst_id: str) -> list[dict]:
             "art":      cells[9],
         })
 
-    if not segments:
+    if not rows:
         return []
 
-    blocks      = []
-    last_umlauf = None
+    # In Umlauf-Blöcke gruppieren
+    # Wendezeit ignorieren, Pause markiert Umlauf-Ende
+    umlaeufe: list[dict] = []
+    aktueller_umlauf: str | None = None
+    erste_fahrt: dict | None = None
+    letzte_fahrt: dict | None = None
 
-    for seg in segments:
-        art = seg["art"].lower()
-
-        # ── Pause ──
-        if "pause" in art:
-            blocks.append({
-                "type": "pause",
-                "von":  seg["von_zeit"],
-                "bis":  seg["bis_zeit"],
-                "ort":  seg["von_ort"],
-                "art":  seg["art"],
+    def abschluss_umlauf(pause_danach: bool):
+        nonlocal aktueller_umlauf, erste_fahrt, letzte_fahrt
+        if aktueller_umlauf and erste_fahrt and letzte_fahrt:
+            umlaeufe.append({
+                "nr":    aktueller_umlauf,
+                "start": {
+                    "zeit":  erste_fahrt["von_zeit"],
+                    "von":   ort_zu_kuerzel(erste_fahrt["von_ort"]),
+                    "linie": erste_fahrt["linie"],
+                },
+                "ende": {
+                    "zeit":  letzte_fahrt["bis_zeit"],
+                    "nach":  ort_zu_kuerzel(letzte_fahrt["bis_ort"]),
+                    "linie": letzte_fahrt["linie"],
+                },
+                "pause_danach": pause_danach,
             })
+        aktueller_umlauf = None
+        erste_fahrt      = None
+        letzte_fahrt     = None
+
+    for row in rows:
+        art = row["art"].lower()
+
+        # Wendezeit komplett ignorieren
+        if "wendezeit" in art:
             continue
 
-        # ── Lenkzeit = eigentliche Fahrt ──
+        # Pause → aktuellen Umlauf abschließen
+        if "pause" in art:
+            abschluss_umlauf(pause_danach=True)
+            continue
+
+        # Lenkzeit = eigentliche Fahrt
         if "lenkzeit" in art:
-            uml = seg["umlauf"]
-            if uml and uml != last_umlauf and last_umlauf is not None:
-                blocks.append({"type": "umlauf", "nr": uml})
-            last_umlauf = last_umlauf or uml
+            uml = row["umlauf"]
 
-            von_code  = name_to_code(seg["von_ort"])
-            nach_code = name_to_code(seg["bis_ort"])
-            blocks.append({
-                "type":   "fahrt",
-                "von":    von_code,
-                "zeit":   seg["von_zeit"],
-                "bis":    seg["bis_zeit"],
-                "nach":   nach_code,
-                "linie":  seg["linie"],
-                "umlauf": uml,
-            })
+            # Umlaufwechsel (ohne Pause dazwischen)
+            if aktueller_umlauf and uml != aktueller_umlauf:
+                abschluss_umlauf(pause_danach=False)
 
-    return blocks
+            if aktueller_umlauf is None:
+                aktueller_umlauf = uml
+                erste_fahrt      = row
+
+            letzte_fahrt = row  # immer überschreiben → letzte gewinnt
+
+    # Letzten offenen Umlauf abschließen
+    abschluss_umlauf(pause_danach=False)
+
+    return umlaeufe
 
 
-# ── Einen Tag abrufen ──────────────────────────────────────────────────────────
-def fetch_shift_blocks(session: requests.Session, date_str: str, dienst_id: str) -> list[dict]:
-    """Ruft shift.aspx für ein Datum ab und gibt geparste Blöcke zurück."""
-    # Calendar-Navigation simulieren (wie monitor.py)
-    session.post(ROSTER_URL, data={
-        "__EVENTTARGET":   "ctl00$cntMainBody$calRoster",
-        "__EVENTARGUMENT": date_str,
-    })
-    resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}")
-    return parse_shift_html(resp.text, date_str, dienst_id)
-
-
-# ── Kompakte Übersichtszeilen bauen ───────────────────────────────────────────
-def blocks_to_lines(blocks: list[dict], dow: int) -> list[str]:
+# ── Textdatei bauen ────────────────────────────────────────────────────────────
+def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str:
     """
-    Wandelt Blöcke in Übersichtszeilen um:
-      BHBE  07:41  26  KHFH  →  HHHS
-            => 2657
-      BHBP  11:55  26  KHFH  →  HHHS
+    Baut den Inhalt der .txt-Datei für einen Dienst.
+
+    Beispielausgabe:
+      Fr, 29.05.26   2061036
+      ────────────────────────────
+      BHBE  06:07  24  HHHS
+            => 2662
+      BHBH  09:53  24  RSRS
+
+      BHBH  10:51  24  HHHS
+            => 2663
+      BHBH  13:21  26  KHFH
+      ────────────────────────────
+      06:07 – 15:03  (8h56min)
     """
-    lines    = []
-    prev_nach = None
+    # Datum parsen
+    year, month, day = date_str.split("-")
+    date_obj = date(int(year), int(month), int(day))
+    wt_kurz  = WOCHENTAG_KURZ[date_obj.weekday()]
+    datum    = f"{int(day):02d}.{int(month):02d}.{str(year)[-2:]}"
 
-    for b in blocks:
-        if b["type"] == "umlauf":
-            lines.append(f"      => {b['nr']}")
+    trennlinie = "─" * 32
+    header     = f"{wt_kurz}, {datum}   {dienst_id}"
 
-        elif b["type"] == "pause":
-            bezahlt = "bez." if "bezahlt" in b["art"].lower() and "unbezahlt" not in b["art"].lower() else "unbez."
-            lines.append(f"  [ Pause {bezahlt}  {b['von']}–{b['bis']} ]")
+    lines = [header, trennlinie]
 
-        elif b["type"] == "fahrt":
-            # Lücke markieren wenn Übergabe an anderem Ort
-            if prev_nach and prev_nach != b["von"]:
-                lines.append("")
+    for i, uml in enumerate(umlaeufe):
+        s = uml["start"]
+        e = uml["ende"]
 
-            terminus     = get_terminus(b["linie"], b["nach"], dow)
-            terminus_str = f"  →  {terminus}" if terminus else ""
-            lines.append(
-                f"{b['von']:<6}{b['zeit']}  {b['linie']:>2}  {b['nach']}{terminus_str}"
-            )
-            prev_nach = b["nach"]
+        # Erste Zeile: Abfahrt
+        lines.append(f"{s['von']:<6}{s['zeit']}  {s['linie']:>2}  {e['nach']}")
+        # Umlaufnummer eingerückt darunter
+        lines.append(f"      => {uml['nr']}")
+        # Letzte Zeile: Ankunft/Einrücken
+        lines.append(f"{e['nach']:<6}{e['zeit']}  {e['linie']:>2}  {e['nach']}")
 
-    return lines
+        # Leerzeile nach Umlauf (außer beim letzten)
+        if i < len(umlaeufe) - 1:
+            lines.append("")
 
-
-# ── Markdown-Ausgabe ───────────────────────────────────────────────────────────
-def build_markdown(all_dienste: list[dict]) -> str:
-    now = datetime.utcnow().strftime("%d.%m.%Y %H:%M UTC")
-    lines = [
-        f"# Dienstübersicht – {MEIN_NAME}",
-        f"*Zuletzt aktualisiert: {now}*",
-        "",
-    ]
-
-    for d in all_dienste:
-        date_obj = datetime(int(d["year"]), int(d["month"]), int(d["day"]))
-        wt       = WOCHENTAG[date_obj.weekday()]
-        wt_kurz  = WOCHENTAG_KURZ[date_obj.weekday()]
-        datum    = f"{int(d['day']):02d}.{int(d['month']):02d}.{d['year'][-2:]}"
-        dow      = date_obj.weekday()  # 0=Mo … 6=So
-
-        lines.append(f"## {wt}, {datum}  ·  Dienst {d['id']}")
-        lines.append("")
-        lines.append("```")
-
-        header = f"{wt_kurz}, {datum}   {d['id']}"
-        lines.append(header)
-        lines.append("─" * max(len(header), 28))
-
-        if d.get("blocks"):
-            fahrt_lines = blocks_to_lines(d["blocks"], dow)
-            lines.extend(fahrt_lines)
-
-            # Dienstzeit berechnen
-            fahrten = [b for b in d["blocks"] if b["type"] == "fahrt"]
-            if fahrten:
-                start = fahrten[0]["zeit"]
-                ende  = fahrten[-1]["bis"]
-                sh, sm = map(int, start.split(":"))
-                eh, em = map(int, ende.split(":"))
-                mins   = (eh * 60 + em) - (sh * 60 + sm)
-                if mins < 0:
-                    mins += 24 * 60
-                h, m = divmod(mins, 60)
-                lines.append("─" * 28)
-                lines.append(f"{start} – {ende}  ({h}h{m:02d}min)")
-        else:
-            lines.append("(keine Fahrten gefunden)")
-
-        lines.append("```")
-        lines.append("")
+    # Gesamtzeit
+    if umlaeufe:
+        start_zeit = umlaeufe[0]["start"]["zeit"]
+        ende_zeit  = umlaeufe[-1]["ende"]["zeit"]
+        sh, sm = map(int, start_zeit.split(":"))
+        eh, em = map(int, ende_zeit.split(":"))
+        mins   = (eh * 60 + em) - (sh * 60 + sm)
+        if mins < 0:
+            mins += 24 * 60
+        h, m = divmod(mins, 60)
+        lines.append(trennlinie)
+        lines.append(f"{start_zeit} – {ende_zeit}  ({h}h{m:02d}min)")
 
     return "\n".join(lines)
 
 
-# ── Plaintext-Ausgabe (für Notizen / Apple Watch) ─────────────────────────────
-def build_txt(all_dienste: list[dict]) -> str:
-    blocks_out = []
-
-    for d in all_dienste:
-        date_obj = datetime(int(d["year"]), int(d["month"]), int(d["day"]))
-        wt_kurz  = WOCHENTAG_KURZ[date_obj.weekday()]
-        datum    = f"{int(d['day']):02d}.{int(d['month']):02d}.{d['year'][-2:]}"
-        dow      = date_obj.weekday()
-
-        header = f"{wt_kurz}, {datum}   {d['id']}"
-        entry  = [header, "─" * max(len(header), 28)]
-
-        if d.get("blocks"):
-            entry.extend(blocks_to_lines(d["blocks"], dow))
-
-            fahrten = [b for b in d["blocks"] if b["type"] == "fahrt"]
-            if fahrten:
-                start = fahrten[0]["zeit"]
-                ende  = fahrten[-1]["bis"]
-                sh, sm = map(int, start.split(":"))
-                eh, em = map(int, ende.split(":"))
-                mins   = (eh * 60 + em) - (sh * 60 + sm)
-                if mins < 0:
-                    mins += 24 * 60
-                h, m = divmod(mins, 60)
-                entry.append("─" * 28)
-                entry.append(f"{start} – {ende}  ({h}h{m:02d}min)")
-        else:
-            entry.append("(keine Fahrten)")
-
-        blocks_out.append("\n".join(entry))
-
-    return "\n\n\n".join(blocks_out)
+# ── Schichtdaten abrufen ───────────────────────────────────────────────────────
+def fetch_shift_html(session: requests.Session, date_str: str) -> str:
+    """Navigiert zum Datum und gibt die shift.aspx-HTML zurück."""
+    session.post(ROSTER_URL, data={
+        "__EVENTTARGET":   "ctl00$cntMainBody$calRoster",
+        "__EVENTARGUMENT": date_str,
+    })
+    resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}", timeout=15)
+    return resp.text
 
 
 # ── Hauptprogramm ──────────────────────────────────────────────────────────────
 def main():
-    # 1. checkpoint.json lesen (von monitor.py geschrieben)
+    # 1. checkpoint.json lesen
     if not os.path.exists(CHECKPOINT_FILE):
-        print("checkpoint.json nicht gefunden – monitor.py noch nicht gelaufen?")
+        print("❌ checkpoint.json nicht gefunden – monitor.py zuerst ausführen!")
         return
 
     with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
         try:
             dienste = json.load(f)
         except (json.JSONDecodeError, ValueError):
-            print("Fehler: checkpoint.json ist beschädigt.")
+            print("❌ checkpoint.json ist beschädigt.")
             return
 
     if not dienste:
-        print("Keine Dienste in checkpoint.json.")
+        print("ℹ️  Keine Dienste in checkpoint.json.")
         return
 
     # Aufsteigend nach Datum sortieren
-    dienste.sort(key=lambda x: (x.get("year", ""), x.get("month", ""), x.get("day", "").zfill(2)))
+    dienste.sort(key=lambda x: (
+        x.get("year", ""),
+        x.get("month", "").zfill(2),
+        x.get("day",   "").zfill(2),
+    ))
 
-    # 2. Einloggen
+    # Ausgabeordner anlegen
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    # 2. Login (3 Versuche)
     session = requests.Session()
-    try:
-        login(session)
-        print("Login erfolgreich.")
-    except RuntimeError as e:
-        print(f"Login-Fehler: {e}")
+    for attempt in range(1, 4):
+        try:
+            login(session)
+            print("✅ Login erfolgreich")
+            break
+        except RuntimeError as e:
+            print(f"⚠️  Login Versuch {attempt}/3: {e}")
+            if attempt < 3:
+                time_mod.sleep(5)
+    else:
+        print("❌ Login endgültig fehlgeschlagen")
         return
 
-    # 3. Für jeden Dienst Schichtdetails abrufen
+    # 3. Pro Dienst: HTML holen, parsen, Datei schreiben
     for d in dienste:
-        date_str = f"{d['year']}-{d['month'].zfill(2)}-{d['day'].zfill(2)}"
-        print(f"  Abruf: {date_str}  Dienst {d['id']} …", end=" ")
+        date_str  = f"{d['year']}-{d['month'].zfill(2)}-{d['day'].zfill(2)}"
+        dienst_id = d["id"]
+
+        print(f"  📋 {date_str}  Dienst {dienst_id} …", end=" ", flush=True)
+
         try:
-            blocks = fetch_shift_blocks(session, date_str, d["id"])
-            d["blocks"] = blocks
-            print(f"{len([b for b in blocks if b['type']=='fahrt'])} Fahrten")
+            html     = fetch_shift_html(session, date_str)
+            umlaeufe = parse_shift_zu_umlaeufe(html, dienst_id)
+
+            if not umlaeufe:
+                print("⚠️  keine Umläufe gefunden")
+                continue
+
+            inhalt    = umlaeufe_zu_text(dienst_id, date_str, umlaeufe)
+            dateiname = f"{date_str}_{dienst_id}.txt"
+            pfad      = os.path.join(OUTPUT_DIR, dateiname)
+
+            with open(pfad, "w", encoding="utf-8") as f:
+                f.write(inhalt)
+
+            print(f"✅  {len(umlaeufe)} Umläufe → {dateiname}")
+
         except Exception as e:
-            d["blocks"] = []
-            print(f"Fehler: {e}")
+            print(f"❌  Fehler: {e}")
 
-    # 4. Ausgabe schreiben
-    md_content  = build_markdown(dienste)
-    txt_content = build_txt(dienste)
-
-    with open(OUTPUT_MD,  "w", encoding="utf-8") as f:
-        f.write(md_content)
-    with open(OUTPUT_TXT, "w", encoding="utf-8") as f:
-        f.write(txt_content)
-
-    print(f"\nFertig:")
-    print(f"  {OUTPUT_MD}")
-    print(f"  {OUTPUT_TXT}")
+    print(f"\n✅ Fertig. Dateien liegen in: {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":
