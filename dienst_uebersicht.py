@@ -38,9 +38,10 @@ LOGIN_URL  = f"{BASE_URL}/default.aspx"
 ROSTER_URL = f"{BASE_URL}/roster.aspx"
 START_URL  = f"{LOGIN_URL}?TestingCookie=1"
 
-USERNAME  = os.getenv("RNV_USER", "")
-PASSWORD  = os.getenv("RNV_PASS", "")
-MEIN_NAME = "Samet"
+USERNAME   = os.getenv("RNV_USER", "")
+PASSWORD   = os.getenv("RNV_PASS", "")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
+MEIN_NAME  = "Samet"
 
 BASE_PATH       = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
@@ -440,12 +441,32 @@ def main():
                 print("⚠️  keine Umläufe gefunden")
                 continue
 
+            # datum für ntfy-Titel berechnen (DD.MM.YY)
+            year, month, day = date_str.split("-")
+            datum   = f"{int(day):02d}.{int(month):02d}.{str(year)[-2:]}"
+
             inhalt    = umlaeufe_zu_text(dienst_id, date_str, umlaeufe)
             dateiname = f"{date_str}_{dienst_id}.txt"
             pfad      = os.path.join(OUTPUT_DIR, dateiname)
 
             with open(pfad, "w", encoding="utf-8") as f:
                 f.write(inhalt)
+
+            # Push-Benachrichtigung mit komplettem Diensttext
+            if NTFY_TOPIC:
+                try:
+                    requests.post(
+                        f"https://ntfy.sh/{NTFY_TOPIC}",
+                        data=inhalt.encode("utf-8"),
+                        headers={
+                            "Title": f"Dienst {dienst_id} – {datum}",
+                            "Tags": "calendar",
+                            "Priority": "default",
+                        },
+                        timeout=10,
+                    )
+                except Exception as ntfy_err:
+                    print(f"⚠️  ntfy-Fehler: {ntfy_err}")
 
             print(f"✅  {len(umlaeufe)} Umläufe → {dateiname}")
 
