@@ -2,11 +2,7 @@ name: RNV Dienst-Übersicht
 
 on:
   workflow_dispatch:
-  # Läuft nach dem Monitor-Workflow (der um */15 6-17 läuft)
-  # +2 Minuten Versatz damit checkpoint.json schon aktuell ist
-  schedule:
-    - cron: "2,17,32,47 6-17 * * *"
-  # Alternativ: wird getriggert wenn monitor.py checkpoint.json pusht
+  # Automatisch wenn monitor.py checkpoint.json aktualisiert
   push:
     paths:
       - "checkpoint.json"
@@ -37,23 +33,20 @@ jobs:
           RNV_PASS: ${{ secrets.RNV_PASS }}
         run: python dienst_uebersicht.py
 
-      - name: Commit Übersicht
+      - name: Commit Übersicht-Dateien
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          FILES_TO_ADD=""
-          if [ -f "dienst_uebersicht.md" ];  then FILES_TO_ADD="$FILES_TO_ADD dienst_uebersicht.md";  fi
-          if [ -f "dienst_uebersicht.txt" ]; then FILES_TO_ADD="$FILES_TO_ADD dienst_uebersicht.txt"; fi
-
-          if [ -n "$FILES_TO_ADD" ]; then
-            git add $FILES_TO_ADD
+          # Ganzen dienste/-Ordner hinzufügen
+          if [ -d "dienste" ] && [ "$(ls -A dienste)" ]; then
+            git add dienste/
             if ! git diff --cached --quiet; then
               git commit -m "Update Dienst-Übersicht"
               git push
             else
-              echo "Keine Änderungen."
+              echo "Keine Änderungen in dienste/."
             fi
           else
-            echo "Keine Ausgabedateien vorhanden."
+            echo "Ordner dienste/ ist leer oder existiert nicht."
           fi
