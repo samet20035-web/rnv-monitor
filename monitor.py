@@ -216,7 +216,7 @@ def parse_services(html, month, year):
             day_str = td.find("strong").get_text(strip=True)[:2]
             span = td.find("span")
             time_val = span.get_text(strip=True) if span else ""
-            
+
             services.append({
                 "day": day_str,
                 "time": time_val,
@@ -227,8 +227,8 @@ def parse_services(html, month, year):
     return services
 
 def main():
-    now = datetime.now(timezone.utc).hour
-    if not (6 <= now < 17):
+    now = datetime.now(timezone.utc)
+    if not (6 <= now.hour < 17):
         print("Außerhalb der Zeit. Skript pausiert.")
         return
 
@@ -239,50 +239,40 @@ def main():
         all_services = []
         html_curr = session.get(ROSTER_URL).text
         month, year = get_current_month_year()
-        
         all_services.extend(parse_services(html_curr, month, year))
-        
-        heute = datetime.utcnow()
+
+        heute = datetime.now(timezone.utc)
         naechster_monat = (heute.replace(day=28) + timedelta(days=5)).replace(day=28)
         html_next = session.get(f"{ROSTER_URL}?{naechster_monat.strftime('%Y-%m-%d')}").text
         all_services.extend(parse_services(html_next, naechster_monat.strftime("%m"), naechster_monat.strftime("%Y")))
-        
-        unique_services = {f"{s['day']}-{s['id']}": s for s in all_services}.values()
+
+        unique_services = {f"{s['year']}-{s['month']}-{s['day']}-{s['id']}": s for s in all_services}.values()
         current = list(unique_services)
 
         old = []
         if os.path.exists(CHECKPOINT_FILE):
             try:
-                with open(CHECKPOINT_FILE, "r") as f:
+                with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
                     old = json.load(f)
             except (json.JSONDecodeError, ValueError):
                 print("Warnung: Checkpoint-Datei war korrupt, erstelle neue Liste.")
                 old = []
 
-        old_dict = {item["id"]: item for item in old}
-        current_dict = {item["id"]: item for item in current}
+        old_dict = {f"{i['year']}-{i['month']}-{i['day']}-{i['id']}": i for i in old}
+        current_dict = {f"{i['year']}-{i['month']}-{i['day']}-{i['id']}": i for i in current}
 
         today = datetime.now(timezone.utc).date()
-        service_date_obj = datetime(
-            int(item["year"]),
-            int(item["month"]),
-            int(item["day"])
-        ).date()
-
-        if service_date_obj < today:
-            print(f"Vergangener Eintrag übersprungen: {item['id']} am {service_date_obj}")
-            continue
 
         for item_id, item in current_dict.items():
+            service_date_obj = datetime(int(item['year']), int(item['month']), int(item['day'])).date()
+            if service_date_obj < today:
+                print(f"Vergangener Eintrag übersprungen: {item['id']} am {service_date_obj}")
+                continue
+
             service_date = f"{item['year']}-{item['month']}-{item['day']}"
-            day_num = int(item["day"])
-            date_obj = datetime(
-                int(item["year"]),
-                int(item["month"]),
-                int(item["day"])
-            )
+            date_obj = datetime(int(item['year']), int(item['month']), int(item['day']))
             wochentag = WOCHENTAG[date_obj.weekday()]
-            info = get_service_details(session, service_date, item["id"])
+            info = get_service_details(session, service_date, item['id'])
 
             if item_id not in old_dict:
                 msg = (
@@ -291,7 +281,6 @@ def main():
                     f"⏰ Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                 )
-
                 requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC}",
                     data=msg.encode("utf-8"),
@@ -306,7 +295,6 @@ def main():
                 )
 
                 print("NTFY_TOPIC_MAMA =", repr(NTFY_TOPIC_MAMA))
-
                 resp = requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
                     data=msg_mama.encode("utf-8"),
@@ -316,7 +304,6 @@ def main():
                     },
                     timeout=10
                 )
-                
                 print("ntfy status:", resp.status_code)
                 print("ntfy body:", resp.text[:300])
 
@@ -327,7 +314,6 @@ def main():
                     f"⏰ Neue Zeit: {item['time']}\n"
                     f"🆔 Dienstnummer: {item['id']}\n\n"
                 )
-
                 requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC}",
                     data=msg.encode("utf-8"),
@@ -340,7 +326,6 @@ def main():
                     f"⏰ Neue Zeit: {item['time']}\n\n"
                     f"*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*"
                 )
-
                 resp = requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
                     data=msg_mama.encode("utf-8"),
@@ -350,20 +335,22 @@ def main():
                     },
                     timeout=10
                 )
-
                 print("ntfy status:", resp.status_code)
                 print("ntfy body:", resp.text[:300])
-                
-            else:
-                continue
 
-        ics_data = generate_ics(current, session)
+        valid_services = []
+        for item in current:
+            d = datetime(int(item['year']), int(item['month']), int(item['day'])).date()
+            if d >= today:
+                valid_services.append(item)
+
+        ics_data = generate_ics(valid_services, session)
         with open(ICS_FILE, "w", encoding="utf-8") as f:
             f.write(ics_data)
         print("ICS-Datei aktualisiert.")
 
-        with open(CHECKPOINT_FILE, "w") as f:
-            json.dump(current, f, indent=2)
+        with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+            json.dump(current, f, indent=2, ensure_ascii=False)
         print("Checkpoint gespeichert.")
 
     except Exception as e:
