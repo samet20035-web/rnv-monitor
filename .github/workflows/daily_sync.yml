@@ -2,26 +2,24 @@ name: RNV Dienstplan Sync
 
 on:
   schedule:
-    # Führt das Skript alle 15 Minuten aus
     - cron: '*/15 * * * *'
-  workflow_dispatch: # Ermöglicht manuellen Start zum Testen
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
       - name: Install dependencies
         run: |
           pip install requests beautifulsoup4
-          # pytz brauchen wir nicht, wenn wir die einfache Zeitprüfung oben nutzen
 
       - name: Run script
         env:
