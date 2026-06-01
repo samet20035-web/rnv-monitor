@@ -29,8 +29,9 @@ jobs:
 
       - name: Run Dienst-Übersicht
         env:
-          RNV_USER: ${{ secrets.RNV_USER }}
-          RNV_PASS: ${{ secrets.RNV_PASS }}
+          RNV_USER:   ${{ secrets.RNV_USER }}
+          RNV_PASS:   ${{ secrets.RNV_PASS }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python dienst_uebersicht.py
 
       - name: Commit Übersicht-Dateien
