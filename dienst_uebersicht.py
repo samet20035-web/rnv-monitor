@@ -114,17 +114,51 @@ def ort_zu_kuerzel(name: str) -> str:
     name = (name or "").strip()
     if not name or name == "\xa0":
         return "????"
-    # Direkter Lookup
     if name in STOPS:
         return STOPS[name]
-    # Fallback: Teilstring-Suche (case-insensitiv)
     name_lower = name.lower()
     for key, code in STOPS.items():
         if key.lower() in name_lower or name_lower in key.lower():
             return code
-    # Letzter Fallback: erste 4 Buchstaben
     letters = "".join(c for c in name.upper() if c.isalpha())
     return letters[:4].ljust(4, "?") if letters else "????"
+
+
+# ── Linien-Endstellen ──────────────────────────────────────────────────────────
+# Jede Linie pendelt zwischen zwei Endstellen.
+# Sa+So bei Linie 21: SRBF wird durch BHBP ersetzt.
+ENDSTELLEN = {
+    "21": {"mo_fr": ("HHHT", "SRBF"), "wende": ("HHHT", "BHBP")},
+    "22": {"mo_fr": ("BHBP", "EHKS"), "wende": ("BHBP", "EHKS")},
+    "23": {"mo_fr": ("BHBP", "LEFH"), "wende": ("BHBP", "LEFH")},
+    "24": {"mo_fr": ("RSRS", "HHHS"), "wende": ("RSRS", "HHHS")},
+    "26": {"mo_fr": ("KHFH", "HHHS"), "wende": ("KHFH", "HHHS")},
+}
+
+
+def gegenendstelle(linie: str, von_code: str, dow: int) -> str | None:
+    """
+    Gibt die gegenüberliegende Endstelle zurück.
+    dow: 0=Mo … 6=So  (Sa=5, So=6 → Wochenende-Regel für Linie 21)
+
+    Beispiel: linie=26, von=HHHS → KHFH
+              linie=26, von=KHFH → HHHS
+              linie=26, von=BHBH → None (Betriebshof ist keine Endstelle)
+    """
+    info = ENDSTELLEN.get(linie)
+    if not info:
+        return None
+
+    key   = "wende" if dow >= 5 else "mo_fr"
+    a, b  = info[key]
+
+    if von_code == a:
+        return b
+    if von_code == b:
+        return a
+    # von_code ist keine Endstelle (z.B. BHBH beim Ausrücken)
+    # → kann nicht ableiten, None zurückgeben
+    return None
 
 
 # ── Login ──────────────────────────────────────────────────────────────────────
@@ -216,16 +250,25 @@ def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
         nonlocal aktueller_umlauf, erste_fahrt, letzte_fahrt
         if aktueller_umlauf and erste_fahrt and letzte_fahrt:
             umlaeufe.append({
-                "nr":    aktueller_umlauf,
+                "nr":           aktueller_umlauf,
+                # Startzeile: von_ort + von_zeit der ersten Lenkzeit
+                # nach_start  = bis_ort der ersten Lenkzeit
+                #               (= erste Endstelle, zeigt Fahrtrichtung)
                 "start": {
-                    "zeit":  erste_fahrt["von_zeit"],
-                    "von":   ort_zu_kuerzel(erste_fahrt["von_ort"]),
-                    "linie": erste_fahrt["linie"],
+                    "zeit":      erste_fahrt["von_zeit"],
+                    "von":       ort_zu_kuerzel(erste_fahrt["von_ort"]),
+                    "linie":     erste_fahrt["linie"],
+                    "nach_code": ort_zu_kuerzel(erste_fahrt["bis_ort"]),
                 },
+                # Endzeile: bis_ort + bis_zeit der letzten Lenkzeit
+                # nach_ende   = gegenüberliegende Endstelle des von_ort
+                #               der letzten Lenkzeit (= wohin der Zug weiterfährt)
                 "ende": {
-                    "zeit":  letzte_fahrt["bis_zeit"],
-                    "nach":  ort_zu_kuerzel(letzte_fahrt["bis_ort"]),
-                    "linie": letzte_fahrt["linie"],
+                    "zeit":      letzte_fahrt["bis_zeit"],
+                    "von":       ort_zu_kuerzel(letzte_fahrt["von_ort"]),
+                    "bis":       ort_zu_kuerzel(letzte_fahrt["bis_ort"]),
+                    "linie":     letzte_fahrt["linie"],
+                    "nach_code": ort_zu_kuerzel(letzte_fahrt["von_ort"]),
                 },
                 "pause_danach": pause_danach,
             })
@@ -270,42 +313,45 @@ def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str
     """
     Baut den Inhalt der .txt-Datei für einen Dienst.
 
-    Beispielausgabe:
-      Fr, 29.05.26   2061036
-      ────────────────────────────
-      BHBE  06:07  24  HHHS
-            => 2662
-      BHBH  09:53  24  RSRS
-
-      BHBH  10:51  24  HHHS
-            => 2663
-      BHBH  13:21  26  KHFH
-      ────────────────────────────
-      06:07 – 15:03  (8h56min)
+    nach-Logik:
+      Erste Zeile: nach = bis_ort der ersten Lenkzeit
+                   (= erste Endstelle, direkt aus HTML ablesbar)
+      Letzte Zeile: nach = gegenüberliegende Endstelle des von_ort
+                    der letzten Lenkzeit
+                    Beispiel: letzte Fahrt endet in BHBH (Einrücken),
+                    von_ort war HHHS → Gegenstelle Linie 24 = RSRS
     """
-    # Datum parsen
     year, month, day = date_str.split("-")
     date_obj = date(int(year), int(month), int(day))
-    wt_kurz  = WOCHENTAG_KURZ[date_obj.weekday()]
+    dow      = date_obj.weekday()   # 0=Mo … 6=So
+    wt_kurz  = WOCHENTAG_KURZ[dow]
     datum    = f"{int(day):02d}.{int(month):02d}.{str(year)[-2:]}"
 
     trennlinie = "─" * 32
     header     = f"{wt_kurz}, {datum}   {dienst_id}"
-
-    lines = [header, trennlinie]
+    lines      = [header, trennlinie]
 
     for i, uml in enumerate(umlaeufe):
         s = uml["start"]
         e = uml["ende"]
 
-        # Erste Zeile: Abfahrt
-        lines.append(f"{s['von']:<6}{s['zeit']}  {s['linie']:>2}  {e['nach']}")
-        # Umlaufnummer eingerückt darunter
-        lines.append(f"      => {uml['nr']}")
-        # Letzte Zeile: Ankunft/Einrücken
-        lines.append(f"{e['nach']:<6}{e['zeit']}  {e['linie']:>2}  {e['nach']}")
+        # nach für erste Zeile: direkt aus HTML (bis_ort der ersten Lenkzeit)
+        nach_start = s["nach_code"]
 
-        # Leerzeile nach Umlauf (außer beim letzten)
+        # nach für letzte Zeile: gegenüberliegende Endstelle des Abfahrtsortes
+        # der letzten Lenkzeit → zeigt wohin der Zug nach dem Einrücken/Übergabe weiter
+        nach_ende = gegenendstelle(e["linie"], e["nach_code"], dow)
+        if nach_ende is None:
+            # Fallback: direkt aus HTML wenn kein Endstellen-Match
+            nach_ende = e["bis"]
+
+        # Erste Zeile: Ausrücken / Beginn Umlauf
+        lines.append(f"{s['von']:<6}{s['zeit']}  {s['linie']:>2}  {nach_start}")
+        # Umlaufnummer
+        lines.append(f"      => {uml['nr']}")
+        # Letzte Zeile: Einrücken / Ende Umlauf
+        lines.append(f"{e['bis']:<6}{e['zeit']}  {e['linie']:>2}  {nach_ende}")
+
         if i < len(umlaeufe) - 1:
             lines.append("")
 
