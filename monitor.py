@@ -284,11 +284,13 @@ def main():
                 requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC}",
                     data=msg.encode("utf-8"),
-                    headers={"Title": "Perdis"}
+                    headers={
+                        "Title": "Perdis",
+                        "Actions": "view, In Notizen speichern, shortcuts://run-shortcut?name=DienstplanSpeichern",
+                    }
                 )
 
                 msg_mama = (
-                    f"Neuer Dienst hinzugefügt\n"
                     f"📅 Wann: {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
                     f"⏰ Zeit: {item['time']}\n\n"
                     f"*Samets Dienstplan wurde aktualisiert.*"
@@ -317,7 +319,10 @@ def main():
                 requests.post(
                     f"https://ntfy.sh/{NTFY_TOPIC}",
                     data=msg.encode("utf-8"),
-                    headers={"Title": "Perdis"}
+                    headers={
+                        "Title": "Perdis",
+                        "Actions": "view, In Notizen speichern, shortcuts://run-shortcut?name=DienstplanSpeichern",
+                    }
                 )
 
                 msg_mama = (
