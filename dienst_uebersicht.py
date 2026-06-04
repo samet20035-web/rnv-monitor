@@ -461,7 +461,7 @@ def main():
                     
                     # 2. Den Link zum Kurzbefehl zusammenbauen
                     # Der Name muss exakt 'DienstplanSpeichern' auf dem iPhone heißen
-                    action_url = f"shortcuts://run-shortcut?name=DienstplanSpeichern&input=text&text={encoded_content}"
+                    action_url = "shortcuts://run-shortcut?name=DienstplanSpeichern"
                     
                     requests.post(
                         f"https://ntfy.sh/{NTFY_TOPIC}",
