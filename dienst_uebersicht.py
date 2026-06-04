@@ -391,26 +391,17 @@ def fetch_shift_html(session: requests.Session, date_str: str) -> str:
 
 
 def build_notes_shortcut_url(title: str, body: str, filename: str) -> str:
-    note_body = body
-    truncated = False
+    note_text = f"{title}\n\n{body}"
 
-    if MAX_SHORTCUT_TEXT_CHARS > 0 and len(note_body) > MAX_SHORTCUT_TEXT_CHARS:
-        note_body = note_body[:MAX_SHORTCUT_TEXT_CHARS].rstrip()
-        note_body += f"\n\n[Text gekuerzt. Komplette TXT-Datei: {filename}]"
-        truncated = True
+    if MAX_SHORTCUT_TEXT_CHARS > 0 and len(note_text) > MAX_SHORTCUT_TEXT_CHARS:
+        note_text = note_text[:MAX_SHORTCUT_TEXT_CHARS].rstrip()
+        note_text += f"\n\n[Text gekuerzt. Komplette TXT-Datei: {filename}]"
 
-    payload = {
-        "title": title,
-        "body": note_body,
-        "filename": filename,
-        "icloud_notes_url": ICLOUD_NOTES_URL,
-        "truncated": truncated,
-    }
-    params = urllib.parse.urlencode({
-        "name": NOTES_SHORTCUT_NAME,
-        "input": "text",
-        "text": json.dumps(payload, ensure_ascii=False),
-    })
+    params = (
+        f"name={urllib.parse.quote(NOTES_SHORTCUT_NAME, safe='')}"
+        f"&input=text"
+        f"&text={urllib.parse.quote(note_text, safe='')}"
+    )
     return f"shortcuts://run-shortcut?{params}"
 
 
