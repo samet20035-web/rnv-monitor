@@ -391,7 +391,7 @@ def fetch_shift_html(session: requests.Session, date_str: str) -> str:
 
 
 def build_notes_shortcut_url(title: str, body: str, filename: str) -> str:
-    note_text = f"{title}\n\n{body}"
+    note_text = body
 
     if MAX_SHORTCUT_TEXT_CHARS > 0 and len(note_text) > MAX_SHORTCUT_TEXT_CHARS:
         note_text = note_text[:MAX_SHORTCUT_TEXT_CHARS].rstrip()
