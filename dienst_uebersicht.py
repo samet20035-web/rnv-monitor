@@ -28,7 +28,6 @@ import os
 import re
 import json
 import requests
-import urllib.parse
 import time as time_mod
 from bs4 import BeautifulSoup
 from datetime import datetime, date
@@ -329,7 +328,7 @@ def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str
     wt_kurz  = WOCHENTAG_KURZ[dow]
     datum    = f"{int(day):02d}.{int(month):02d}.{str(year)[-2:]}"
 
-    trennlinie = "─" * 14
+    trennlinie = "─" * 15
     header     = f"{wt_kurz}, {datum}   {dienst_id}"
     lines      = [header, trennlinie]
 
@@ -454,15 +453,8 @@ def main():
                 f.write(inhalt)
 
             # Push-Benachrichtigung mit komplettem Diensttext
-              if NTFY_TOPIC:
+            if NTFY_TOPIC:
                 try:
-                    # 1. Inhalt kodieren, damit er in eine URL passt
-                    encoded_content = urllib.parse.quote(inhalt)
-                    
-                    # 2. Den Link zum Kurzbefehl zusammenbauen
-                    # Der Name muss exakt 'DienstplanSpeichern' auf dem iPhone heißen
-                    action_url = "shortcuts://run-shortcut?name=DienstplanSpeichern"
-                    
                     requests.post(
                         f"https://ntfy.sh/{NTFY_TOPIC}",
                         data=inhalt.encode("utf-8"),
@@ -470,8 +462,7 @@ def main():
                             "Title": f"Dienst {dienst_id} – {datum}",
                             "Tags": "calendar",
                             "Priority": "default",
-                            # 3. Actions-Header mit Label und URL
-                            "Actions": f"view, Notiz speichern, {action_url}"
+                            "Actions": "view, In Notizen speichern, shortcuts://run-shortcut?name=DienstplanSpeichern",
                         },
                         timeout=10,
                     )
