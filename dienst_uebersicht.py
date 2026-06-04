@@ -328,7 +328,7 @@ def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str
     wt_kurz  = WOCHENTAG_KURZ[dow]
     datum    = f"{int(day):02d}.{int(month):02d}.{str(year)[-2:]}"
 
-    trennlinie = "-" * 14
+    trennlinie = "-" * 30
     header     = f"{wt_kurz}, {datum}   {dienst_id}"
     lines      = [header, trennlinie]
 
