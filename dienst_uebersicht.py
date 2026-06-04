@@ -27,6 +27,7 @@ Logik:
 import os
 import re
 import json
+import urllib.parse
 import requests
 import time as time_mod
 from bs4 import BeautifulSoup
@@ -45,6 +46,12 @@ MEIN_NAME  = "Samet"
 
 BASE_PATH       = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
+ICLOUD_NOTES_URL = os.getenv(
+    "ICLOUD_NOTES_URL",
+    "https://www.icloud.com/notes/05dCvnyOenXtYy9Rkdt2T6w7w",
+)
+NOTES_SHORTCUT_NAME = os.getenv("NOTES_SHORTCUT_NAME", "DienstplanSpeichern")
+MAX_SHORTCUT_TEXT_CHARS = int(os.getenv("MAX_SHORTCUT_TEXT_CHARS", "6000"))
 OUTPUT_DIR      = os.path.join(BASE_PATH, "dienste")   # ← ein Ordner, viele Dateien
 
 WOCHENTAG_KURZ = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
@@ -328,7 +335,7 @@ def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str
     wt_kurz  = WOCHENTAG_KURZ[dow]
     datum    = f"{int(day):02d}.{int(month):02d}.{str(year)[-2:]}"
 
-    trennlinie = "-" * 22
+    trennlinie = "─" * 32
     header     = f"{wt_kurz}, {datum}   {dienst_id}"
     lines      = [header, trennlinie]
 
@@ -381,6 +388,40 @@ def fetch_shift_html(session: requests.Session, date_str: str) -> str:
     })
     resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}", timeout=15)
     return resp.text
+
+
+def build_notes_shortcut_url(title: str, body: str, filename: str) -> str:
+    note_body = body
+    truncated = False
+
+    if MAX_SHORTCUT_TEXT_CHARS > 0 and len(note_body) > MAX_SHORTCUT_TEXT_CHARS:
+        note_body = note_body[:MAX_SHORTCUT_TEXT_CHARS].rstrip()
+        note_body += f"\n\n[Text gekuerzt. Komplette TXT-Datei: {filename}]"
+        truncated = True
+
+    payload = {
+        "title": title,
+        "body": note_body,
+        "filename": filename,
+        "icloud_notes_url": ICLOUD_NOTES_URL,
+        "truncated": truncated,
+    }
+    params = urllib.parse.urlencode({
+        "name": NOTES_SHORTCUT_NAME,
+        "input": "text",
+        "text": json.dumps(payload, ensure_ascii=False),
+    })
+    return f"shortcuts://run-shortcut?{params}"
+
+
+def build_ntfy_actions(title: str, body: str, filename: str) -> str:
+    shortcut_url = build_notes_shortcut_url(title, body, filename)
+    actions = [f"view, Notiz erstellen, {shortcut_url}"]
+
+    if ICLOUD_NOTES_URL:
+        actions.append(f"view, iCloud Notizen, {ICLOUD_NOTES_URL}")
+
+    return "; ".join(actions)
 
 
 # ── Hauptprogramm ──────────────────────────────────────────────────────────────
@@ -455,14 +496,15 @@ def main():
             # Push-Benachrichtigung mit komplettem Diensttext
             if NTFY_TOPIC:
                 try:
+                    note_title = f"Dienst {dienst_id} - {datum}"
                     requests.post(
                         f"https://ntfy.sh/{NTFY_TOPIC}",
                         data=inhalt.encode("utf-8"),
                         headers={
-                            "Title": f"Dienst {dienst_id} – {datum}",
+                            "Title": note_title,
                             "Tags": "calendar",
                             "Priority": "default",
-                            "Actions": "view, In Notizen speichern, shortcuts://run-shortcut?name=DienstplanSpeichern",
+                            "Actions": build_ntfy_actions(note_title, inhalt, dateiname),
                         },
                         timeout=10,
                     )
