@@ -462,6 +462,7 @@ def main():
                             "Title": f"Dienst {dienst_id} – {datum}",
                             "Tags": "calendar",
                             "Priority": "default",
+                            "Actions": "view, In Notizen speichern, shortcuts://run-shortcut?name=DienstplanSpeichern",
                         },
                         timeout=10,
                     )
