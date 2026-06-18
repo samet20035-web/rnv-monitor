@@ -21,6 +21,7 @@ Logik:
   - Pro Umlauf: erste Lenkzeit = Ausrücken/Start, letzte Lenkzeit = Einrücken/Ende
   - Umlaufwechsel → "      => UMLAUFNR" nach der ersten Zeile des Umlauts
   - Pause → Leerzeile zwischen den Umlauf-Blöcken (Pause selbst nicht anzeigen)
+  - Nur Dienste in der Zukunft (ab heute) werden verarbeitet
   - Jede separate .txt-Datei pro Dienst im Ordner "dienste/"
 """
 
@@ -133,8 +134,6 @@ def ort_zu_kuerzel(name: str) -> str:
 
 
 # ── Linien-Endstellen ──────────────────────────────────────────────────────────
-# Jede Linie pendelt zwischen zwei Endstellen.
-# Sa+So bei Linie 21: SRBF wird durch BHBP ersetzt.
 ENDSTELLEN = {
     "21": {"mo_fr": ("HHHT", "SRBF"), "wende": ("HHHT", "BHBP")},
     "22": {"mo_fr": ("BHBP", "EHKS"), "wende": ("BHBP", "EHKS")},
@@ -145,27 +144,15 @@ ENDSTELLEN = {
 
 
 def gegenendstelle(linie: str, von_code: str, dow: int) -> str | None:
-    """
-    Gibt die gegenüberliegende Endstelle zurück.
-    dow: 0=Mo … 6=So  (Sa=5, So=6 → Wochenende-Regel für Linie 21)
-
-    Beispiel: linie=26, von=HHHS → KHFH
-              linie=26, von=KHFH → HHHS
-              linie=26, von=BHBH → None (Betriebshof ist keine Endstelle)
-    """
     info = ENDSTELLEN.get(linie)
     if not info:
         return None
-
-    key   = "wende" if dow >= 5 else "mo_fr"
-    a, b  = info[key]
-
+    key  = "wende" if dow >= 5 else "mo_fr"
+    a, b = info[key]
     if von_code == a:
         return b
     if von_code == b:
         return a
-    # von_code ist keine Endstelle (z.B. BHBH beim Ausrücken)
-    # → kann nicht ableiten, None zurückgeben
     return None
 
 
@@ -209,23 +196,11 @@ def login(session: requests.Session):
 
 # ── HTML parsen → Umlauf-Blöcke ───────────────────────────────────────────────
 def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
-    """
-    Liest die shift.aspx-Tabelle und gruppiert nach Umläufen.
-
-    Rückgabe: Liste von Umlauf-Dicts:
-      {
-        "nr":    "2662",
-        "start": {"zeit": "06:07", "von": "BHBE", "linie": "24"},
-        "ende":  {"zeit": "09:53", "nach": "BHBH", "linie": "24"},
-        "pause_danach": True/False   ← True wenn danach eine Pause folgt
-      }
-    """
     soup = BeautifulSoup(html, "html.parser")
     tbl  = soup.find("table", id="ctl00_cntMainBody_lstDienstinfo")
     if not tbl:
         return []
 
-    # Alle relevanten Zeilen des gesuchten Dienstes sammeln
     rows = []
     for tr in tbl.find_all("tr"):
         cells = [td.get_text(strip=True).replace("\xa0", "").strip()
@@ -247,8 +222,6 @@ def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
     if not rows:
         return []
 
-    # In Umlauf-Blöcke gruppieren
-    # Wendezeit ignorieren, Pause markiert Umlauf-Ende
     umlaeufe: list[dict] = []
     aktueller_umlauf: str | None = None
     erste_fahrt: dict | None = None
@@ -258,19 +231,13 @@ def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
         nonlocal aktueller_umlauf, erste_fahrt, letzte_fahrt
         if aktueller_umlauf and erste_fahrt and letzte_fahrt:
             umlaeufe.append({
-                "nr":           aktueller_umlauf,
-                # Startzeile: von_ort + von_zeit der ersten Lenkzeit
-                # nach_start  = bis_ort der ersten Lenkzeit
-                #               (= erste Endstelle, zeigt Fahrtrichtung)
+                "nr": aktueller_umlauf,
                 "start": {
                     "zeit":      erste_fahrt["von_zeit"],
                     "von":       ort_zu_kuerzel(erste_fahrt["von_ort"]),
                     "linie":     erste_fahrt["linie"],
                     "nach_code": ort_zu_kuerzel(erste_fahrt["bis_ort"]),
                 },
-                # Endzeile: bis_ort + bis_zeit der letzten Lenkzeit
-                # nach_ende   = gegenüberliegende Endstelle des von_ort
-                #               der letzten Lenkzeit (= wohin der Zug weiterfährt)
                 "ende": {
                     "zeit":      letzte_fahrt["bis_zeit"],
                     "von":       ort_zu_kuerzel(letzte_fahrt["von_ort"]),
@@ -287,20 +254,16 @@ def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
     for row in rows:
         art = row["art"].lower()
 
-        # Wendezeit komplett ignorieren
         if "wendezeit" in art:
             continue
 
-        # Pause → aktuellen Umlauf abschließen
         if "pause" in art:
             abschluss_umlauf(pause_danach=True)
             continue
 
-        # Lenkzeit = eigentliche Fahrt
         if "lenkzeit" in art:
             uml = row["umlauf"]
 
-            # Umlaufwechsel (ohne Pause dazwischen)
             if aktueller_umlauf and uml != aktueller_umlauf:
                 abschluss_umlauf(pause_danach=False)
 
@@ -308,9 +271,8 @@ def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
                 aktueller_umlauf = uml
                 erste_fahrt      = row
 
-            letzte_fahrt = row  # immer überschreiben → letzte gewinnt
+            letzte_fahrt = row
 
-    # Letzten offenen Umlauf abschließen
     abschluss_umlauf(pause_danach=False)
 
     return umlaeufe
@@ -318,20 +280,9 @@ def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
 
 # ── Textdatei bauen ────────────────────────────────────────────────────────────
 def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str:
-    """
-    Baut den Inhalt der .txt-Datei für einen Dienst.
-
-    nach-Logik:
-      Erste Zeile: nach = bis_ort der ersten Lenkzeit
-                   (= erste Endstelle, direkt aus HTML ablesbar)
-      Letzte Zeile: nach = gegenüberliegende Endstelle des von_ort
-                    der letzten Lenkzeit
-                    Beispiel: letzte Fahrt endet in BHBH (Einrücken),
-                    von_ort war HHHS → Gegenstelle Linie 24 = RSRS
-    """
     year, month, day = date_str.split("-")
     date_obj = date(int(year), int(month), int(day))
-    dow      = date_obj.weekday()   # 0=Mo … 6=So
+    dow      = date_obj.weekday()
     wt_kurz  = WOCHENTAG_KURZ[dow]
     datum    = f"{int(day):02d}.{int(month):02d}.{str(year)[-2:]}"
 
@@ -343,27 +294,19 @@ def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str
         s = uml["start"]
         e = uml["ende"]
 
-        # nach für erste Zeile: direkt aus HTML (bis_ort der ersten Lenkzeit)
         nach_start = s["nach_code"]
 
-        # nach für letzte Zeile: gegenüberliegende Endstelle des Abfahrtsortes
-        # der letzten Lenkzeit → zeigt wohin der Zug nach dem Einrücken/Übergabe weiter
         nach_ende = gegenendstelle(e["linie"], e["nach_code"], dow)
         if nach_ende is None:
-            # Fallback: direkt aus HTML wenn kein Endstellen-Match
             nach_ende = e["bis"]
 
-        # Erste Zeile: Ausrücken / Beginn Umlauf
         lines.append(f"{s['von']:<6}{s['zeit']}  {s['linie']:>2}  {nach_start}")
-        # Umlaufnummer
         lines.append(f"      => {uml['nr']}")
-        # Letzte Zeile: Einrücken / Ende Umlauf
         lines.append(f"{e['bis']:<6}{e['zeit']}  {e['linie']:>2}  {nach_ende}")
 
         if i < len(umlaeufe) - 1:
             lines.append("")
 
-    # Gesamtzeit
     if umlaeufe:
         start_zeit = umlaeufe[0]["start"]["zeit"]
         ende_zeit  = umlaeufe[-1]["ende"]["zeit"]
@@ -379,24 +322,12 @@ def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str
     return "\n".join(lines)
 
 
-# ── Schichtdaten abrufen ───────────────────────────────────────────────────────
-def fetch_shift_html(session: requests.Session, date_str: str) -> str:
-    """Navigiert zum Datum und gibt die shift.aspx-HTML zurück."""
-    session.post(ROSTER_URL, data={
-        "__EVENTTARGET":   "ctl00$cntMainBody$calRoster",
-        "__EVENTARGUMENT": date_str,
-    })
-    resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}", timeout=15)
-    return resp.text
-
-
+# ── ntfy-Hilfsfunktionen ───────────────────────────────────────────────────────
 def build_notes_shortcut_url(title: str, body: str, filename: str) -> str:
     note_text = body
-
     if MAX_SHORTCUT_TEXT_CHARS > 0 and len(note_text) > MAX_SHORTCUT_TEXT_CHARS:
         note_text = note_text[:MAX_SHORTCUT_TEXT_CHARS].rstrip()
         note_text += f"\n\n[Text gekuerzt. Komplette TXT-Datei: {filename}]"
-
     params = (
         f"name={urllib.parse.quote(NOTES_SHORTCUT_NAME, safe='')}"
         f"&input=text"
@@ -408,16 +339,14 @@ def build_notes_shortcut_url(title: str, body: str, filename: str) -> str:
 def build_ntfy_actions(title: str, body: str, filename: str) -> str:
     shortcut_url = build_notes_shortcut_url(title, body, filename)
     actions = [f"view, Notiz erstellen, {shortcut_url}"]
-
     if ICLOUD_NOTES_URL:
         actions.append(f"view, iCloud Notizen, {ICLOUD_NOTES_URL}")
-
     return "; ".join(actions)
 
 
 # ── Hauptprogramm ──────────────────────────────────────────────────────────────
 def main():
-    # 1. checkpoint.json lesen
+    # 1. checkpoint.json lesen (von monitor.py geschrieben, hier nur gelesen)
     if not os.path.exists(CHECKPOINT_FILE):
         print("❌ checkpoint.json nicht gefunden – monitor.py zuerst ausführen!")
         return
@@ -440,6 +369,22 @@ def main():
         x.get("day",   "").zfill(2),
     ))
 
+    # ── Nur zukünftige Dienste (ab heute) verarbeiten ─────────────────────────
+    heute = date.today()
+    dienste_zukunft = [
+        d for d in dienste
+        if date(int(d["year"]), int(d["month"]), int(d["day"])) >= heute
+    ]
+
+    if not dienste_zukunft:
+        print("ℹ️  Keine zukünftigen Dienste in checkpoint.json.")
+        return
+
+    uebersprungen = len(dienste) - len(dienste_zukunft)
+    if uebersprungen:
+        print(f"ℹ️  {uebersprungen} vergangene Dienste übersprungen.")
+    print(f"📋 {len(dienste_zukunft)} Dienst(e) werden verarbeitet.")
+
     # Ausgabeordner anlegen
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -459,21 +404,28 @@ def main():
         return
 
     # 3. Pro Dienst: HTML holen, parsen, Datei schreiben
-    for d in dienste:
+    for d in dienste_zukunft:
         date_str  = f"{d['year']}-{d['month'].zfill(2)}-{d['day'].zfill(2)}"
         dienst_id = d["id"]
 
         print(f"  📋 {date_str}  Dienst {dienst_id} …", end=" ", flush=True)
 
         try:
-            html     = fetch_shift_html(session, date_str)
+            # Calendar-Navigation simulieren (wie monitor.py)
+            session.post(ROSTER_URL, data={
+                "__EVENTTARGET":   "ctl00$cntMainBody$calRoster",
+                "__EVENTARGUMENT": date_str,
+            })
+            html = session.get(
+                f"{BASE_URL}/shift.aspx?{date_str}", timeout=15
+            ).text
+
             umlaeufe = parse_shift_zu_umlaeufe(html, dienst_id)
 
             if not umlaeufe:
                 print("⚠️  keine Umläufe gefunden")
                 continue
 
-            # datum für ntfy-Titel berechnen (DD.MM.YY)
             year, month, day = date_str.split("-")
             datum   = f"{int(day):02d}.{int(month):02d}.{str(year)[-2:]}"
 
@@ -484,7 +436,7 @@ def main():
             with open(pfad, "w", encoding="utf-8") as f:
                 f.write(inhalt)
 
-            # Push-Benachrichtigung mit komplettem Diensttext
+            # Push-Benachrichtigung
             if NTFY_TOPIC:
                 try:
                     note_title = f"Dienst {dienst_id} - {datum}"
@@ -492,10 +444,10 @@ def main():
                         f"https://ntfy.sh/{NTFY_TOPIC}",
                         data=inhalt.encode("utf-8"),
                         headers={
-                            "Title": note_title,
-                            "Tags": "calendar",
+                            "Title":    note_title,
+                            "Tags":     "calendar",
                             "Priority": "default",
-                            "Actions": build_ntfy_actions(note_title, inhalt, dateiname),
+                            "Actions":  build_ntfy_actions(note_title, inhalt, dateiname),
                         },
                         timeout=10,
                     )
