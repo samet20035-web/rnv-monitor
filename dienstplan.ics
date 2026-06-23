@@ -4,9 +4,9 @@ PRODID:-//RNV//Dienstplan//DE
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
 BEGIN:VEVENT
-SUMMARY:Straßenbahn Dienst 2061022 (Samet)
-DTSTART;TZID=Europe/Berlin:20260622T124900
-DTEND;TZID=Europe/Berlin:20260622T204300
-DESCRIPTION:Beginn: 12:49 Uhr (Betriebshof)\n1. Pause: 16:47 - 17:17 Uhr\n2. Pause: 17:17 - 17:27 Uhr\nEnde: 20:43 Uhr (Bth. HD Bergheim)
+SUMMARY:Straßenbahn Dienst 2061014 (Samet)
+DTSTART;TZID=Europe/Berlin:20260627T130700
+DTEND;TZID=Europe/Berlin:20260627T220000
+DESCRIPTION:Beginn: 13:07 Uhr (HD Hauptbahnhof)\n1. Pause: 15:13 - 15:31 Uhr\n2. Pause: 17:07 - 17:37 Uhr\n3. Pause: 17:37 - 18:07 Uhr\nEnde: 22:00 Uhr (Betriebshof)
 END:VEVENT
 END:VCALENDAR
