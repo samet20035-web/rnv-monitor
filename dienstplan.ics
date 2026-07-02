@@ -9,4 +9,10 @@ DTSTART;TZID=Europe/Berlin:20260703T063800
 DTEND;TZID=Europe/Berlin:20260703T153300
 DESCRIPTION:Beginn: 06:38 Uhr (Bth. HD Bergheim)\n1. Pause: 11:43 - 12:13 Uhr\n2. Pause: 12:13 - 12:24 Uhr\nEnde: 15:33 Uhr (HD Hauptbahnhof)
 END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Straßenbahn Dienst 2063002 (Samet)
+DTSTART;TZID=Europe/Berlin:20260706T080900
+DTEND;TZID=Europe/Berlin:20260706T194300
+DESCRIPTION:Beginn: 08:09 Uhr (Betriebshof)\nKeine Pausen\nEnde: 19:43 Uhr (Bth. HD Bergheim)
+END:VEVENT
 END:VCALENDAR
