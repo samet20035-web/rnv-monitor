@@ -23,6 +23,7 @@ Logik:
   - Pause → Leerzeile zwischen den Umlauf-Blöcken (Pause selbst nicht anzeigen)
   - Nur Dienste in der Zukunft (ab heute) werden verarbeitet
   - Jede separate .txt-Datei pro Dienst im Ordner "dienste/"
+  - Push nur bei NEUEM oder GEÄNDERTEM Inhalt (verhindert Mehrfach-Pushs)
 """
 
 import os
@@ -143,7 +144,7 @@ ENDSTELLEN = {
 }
 
 
-def gegenendstelle(linie: str, von_code: str, dow: int) -> str | None:
+def gegenendstelle(linie: str, von_code: str, dow: int):
     info = ENDSTELLEN.get(linie)
     if not info:
         return None
@@ -195,7 +196,7 @@ def login(session: requests.Session):
 
 
 # ── HTML parsen → Umlauf-Blöcke ───────────────────────────────────────────────
-def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
+def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list:
     soup = BeautifulSoup(html, "html.parser")
     tbl  = soup.find("table", id="ctl00_cntMainBody_lstDienstinfo")
     if not tbl:
@@ -222,10 +223,10 @@ def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
     if not rows:
         return []
 
-    umlaeufe: list[dict] = []
-    aktueller_umlauf: str | None = None
-    erste_fahrt: dict | None = None
-    letzte_fahrt: dict | None = None
+    umlaeufe = []
+    aktueller_umlauf = None
+    erste_fahrt = None
+    letzte_fahrt = None
 
     def abschluss_umlauf(pause_danach: bool):
         nonlocal aktueller_umlauf, erste_fahrt, letzte_fahrt
@@ -279,7 +280,7 @@ def parse_shift_zu_umlaeufe(html: str, dienst_id: str) -> list[dict]:
 
 
 # ── Textdatei bauen ────────────────────────────────────────────────────────────
-def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list[dict]) -> str:
+def umlaeufe_zu_text(dienst_id: str, date_str: str, umlaeufe: list) -> str:
     year, month, day = date_str.split("-")
     date_obj = date(int(year), int(month), int(day))
     dow      = date_obj.weekday()
@@ -403,7 +404,7 @@ def main():
         print("❌ Login endgültig fehlgeschlagen")
         return
 
-    # 3. Pro Dienst: HTML holen, parsen, Datei schreiben
+    # 3. Pro Dienst: HTML holen, parsen, nur bei Änderung schreiben & pushen
     for d in dienste_zukunft:
         date_str  = f"{d['year']}-{d['month'].zfill(2)}-{d['day'].zfill(2)}"
         dienst_id = d["id"]
@@ -433,10 +434,20 @@ def main():
             dateiname = f"{date_str}_{dienst_id}.txt"
             pfad      = os.path.join(OUTPUT_DIR, dateiname)
 
+            # ── Change-Detection: nur bei neuem/geändertem Inhalt schreiben+pushen ──
+            alter_inhalt = None
+            if os.path.exists(pfad):
+                with open(pfad, "r", encoding="utf-8") as f:
+                    alter_inhalt = f.read()
+
+            if alter_inhalt == inhalt:
+                print("↔️  unverändert, kein Push")
+                continue
+
             with open(pfad, "w", encoding="utf-8") as f:
                 f.write(inhalt)
 
-            # Push-Benachrichtigung
+            # Push-Benachrichtigung (nur bei neuem/geändertem Inhalt)
             if NTFY_TOPIC:
                 try:
                     note_title = f"Dienst {dienst_id} - {datum}"
@@ -454,7 +465,8 @@ def main():
                 except Exception as ntfy_err:
                     print(f"⚠️  ntfy-Fehler: {ntfy_err}")
 
-            print(f"✅  {len(umlaeufe)} Umläufe → {dateiname}")
+            status = "🆕 neu" if alter_inhalt is None else "🔄 geändert"
+            print(f"✅  {status}, {len(umlaeufe)} Umläufe → {dateiname}")
 
         except Exception as e:
             print(f"❌  Fehler: {e}")
