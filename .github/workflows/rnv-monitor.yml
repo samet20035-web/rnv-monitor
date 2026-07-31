@@ -42,20 +42,28 @@ jobs:
         run: |
           python monitor.py
 
+      - name: Run Dienst-Übersicht
+        env:
+          RNV_USER: ${{ secrets.RNV_USER }}
+          RNV_PASS: ${{ secrets.RNV_PASS }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python dienst_uebersicht.py
+
       - name: Commit changes
         run: |
           FILES_TO_ADD=""
           if [ -f "checkpoint.json" ]; then FILES_TO_ADD="$FILES_TO_ADD checkpoint.json"; fi
           if [ -f "dienstplan.ics" ]; then FILES_TO_ADD="$FILES_TO_ADD dienstplan.ics"; fi
+          if [ -d "dienste" ] && [ "$(ls -A dienste)" ]; then FILES_TO_ADD="$FILES_TO_ADD dienste/"; fi
 
           if [ -n "$FILES_TO_ADD" ]; then
             git add $FILES_TO_ADD
             if ! git diff --cached --quiet; then
-              git commit -m "Update Dienstplan und Checkpoint"
+              git commit -m "Update Dienstplan, Übersicht und Checkpoint"
               git push
             else
               echo "Keine Änderungen zum Committen gefunden."
             fi
           else
-            echo "Keine Dateien (checkpoint.json oder dienstplan.ics) zum Committen vorhanden."
+            echo "Keine Dateien zum Committen vorhanden."
           fi
