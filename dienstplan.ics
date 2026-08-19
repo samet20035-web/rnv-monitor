@@ -10,6 +10,12 @@ DTEND;TZID=Europe/Berlin:20260819T161300
 DESCRIPTION:Beginn: 07:33 Uhr (Bismarckplatz)\n1. Pause: 12:35 - 13:05 Uhr\n2. Pause: 13:05 - 13:23 Uhr\nEnde: 16:13 Uhr (Bismarckplatz)
 END:VEVENT
 BEGIN:VEVENT
+SUMMARY:Straßenbahn Dienst 2061029 (Samet)
+DTSTART;TZID=Europe/Berlin:20260821T075700
+DTEND;TZID=Europe/Berlin:20260821T163600
+DESCRIPTION:Beginn: 07:57 Uhr (Bismarckplatz)\n1. Pause: 11:27 - 11:57 Uhr\n2. Pause: 11:57 - 12:30 Uhr\nEnde: 16:36 Uhr (Betriebshof)
+END:VEVENT
+BEGIN:VEVENT
 SUMMARY:Straßenbahn Dienst 2061025 (Samet)
 DTSTART;TZID=Europe/Berlin:20260822T112200
 DTEND;TZID=Europe/Berlin:20260822T201100
