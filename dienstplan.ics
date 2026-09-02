@@ -5,6 +5,12 @@ CALSCALE:GREGORIAN
 METHOD:PUBLISH
 BEGIN:VEVENT
 SUMMARY:Straßenbahn Dienst 2061036 (Samet)
+DTSTART;TZID=Europe/Berlin:20260903T060500
+DTEND;TZID=Europe/Berlin:20260903T150700
+DESCRIPTION:Beginn: 06:05 Uhr (Bth. HD Bergheim)\n1. Pause: 10:27 - 10:57 Uhr\n2. Pause: 10:57 - 11:09 Uhr\nEnde: 15:07 Uhr (Betriebshof)
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Straßenbahn Dienst 2061036 (Samet)
 DTSTART;TZID=Europe/Berlin:20260905T083900
 DTEND;TZID=Europe/Berlin:20260905T171700
 DESCRIPTION:Beginn: 08:39 Uhr (Bth. HD Bergheim)\n1. Pause: 13:10 - 13:40 Uhr\n2. Pause: 13:40 - 13:57 Uhr\nEnde: 17:17 Uhr (Betriebshof)
