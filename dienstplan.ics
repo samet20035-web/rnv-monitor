@@ -4,12 +4,6 @@ PRODID:-//RNV//Dienstplan//DE
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
 BEGIN:VEVENT
-SUMMARY:Straßenbahn Dienst 2061031 (Samet)
-DTSTART;TZID=Europe/Berlin:20261001T085600
-DTEND;TZID=Europe/Berlin:20261001T171600
-DESCRIPTION:Beginn: 08:56 Uhr (Betriebshof)\n1. Pause: 12:29 - 12:59 Uhr\n2. Pause: 12:59 - 13:17 Uhr\nEnde: 17:16 Uhr (Betriebshof)
-END:VEVENT
-BEGIN:VEVENT
 SUMMARY:Straßenbahn Dienst 2061041 (Samet)
 DTSTART;TZID=Europe/Berlin:20261002T063100
 DTEND;TZID=Europe/Berlin:20261002T144900
@@ -20,5 +14,17 @@ SUMMARY:Straßenbahn Dienst 2061034 (Samet)
 DTSTART;TZID=Europe/Berlin:20261005T064700
 DTEND;TZID=Europe/Berlin:20261005T152700
 DESCRIPTION:Beginn: 06:47 Uhr (Bismarckplatz)\n1. Pause: 10:47 - 11:17 Uhr\n2. Pause: 11:17 - 11:27 Uhr\nEnde: 15:27 Uhr (Bismarckplatz)
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Straßenbahn Dienst 7001 (Samet)
+DTSTART;TZID=Europe/Berlin:20261006T073000
+DTEND;TZID=Europe/Berlin:20261006T154200
+DESCRIPTION:Beginn: 07:30 Uhr (Betriebshof)\n1. Pause: 11:30 - 12:00 Uhr\nEnde: 15:42 Uhr (Betriebshof)
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Straßenbahn Dienst 2061025 (Samet)
+DTSTART;TZID=Europe/Berlin:20261007T124100
+DTEND;TZID=Europe/Berlin:20261007T204100
+DESCRIPTION:Beginn: 12:41 Uhr (Bismarckplatz)\n1. Pause: 15:47 - 16:17 Uhr\n2. Pause: 16:17 - 16:31 Uhr\nEnde: 20:41 Uhr (Bth. HD Bergheim)
 END:VEVENT
 END:VCALENDAR
