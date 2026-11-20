@@ -1,17 +1,18 @@
 import os
+import sys
+import json
+import time as time_mod
 import requests
 from bs4 import BeautifulSoup
-import json
-import urllib.parse
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 BASE_URL = "https://fahrerauskunft.rnv-online.de/WebComm"
 LOGIN_URL = f"{BASE_URL}/default.aspx"
 ROSTER_URL = f"{BASE_URL}/roster.aspx"
 START_URL = f"{LOGIN_URL}?TestingCookie=1"
 
-NTFY_TOPIC = os.getenv("NTFY_TOPIC", "DEIN_TOPIC")
-NTFY_TOPIC_MAMA = os.getenv("NTFY_TOPIC_MAMA")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
+NTFY_TOPIC_MAMA = os.getenv("NTFY_TOPIC_MAMA", "")
 USERNAME = os.getenv("RNV_USER", "DEIN_USER")
 PASSWORD = os.getenv("RNV_PASS", "DEIN_PASS")
 MEIN_NAME = "Samet"
@@ -22,22 +23,27 @@ ICS_FILE = os.path.join(BASE_PATH, "dienstplan.ics")
 
 WOCHENTAG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
+ACTIONS_SELF = "view, In Notizen speichern, shortcuts://run-shortcut?name=DienstplanSpeichern"
+MAMA_ICON = "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios57x57.png"
+
+
+# ── ICS ───────────────────────────────────────────────────────────────────────
 def generate_ics(services, session):
     ics_lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
         "PRODID:-//RNV//Dienstplan//DE",
         "CALSCALE:GREGORIAN",
-        "METHOD:PUBLISH"
+        "METHOD:PUBLISH",
     ]
 
     for s in services:
-        jahr = s.get('year', '2026')
-        monat = s.get('month', '05')
-        tag = s['day'].zfill(2)
+        jahr = s.get("year", "2026")
+        monat = s.get("month", "05")
+        tag = s["day"].zfill(2)
 
         date_str = f"{jahr}-{monat}-{tag}"
-        info = get_service_details(session, date_str, s['id'])
+        info = get_service_details(session, date_str, s["id"])
 
         if info["start_time"] and info["start_time"] != "-":
             start_zeit = info["start_time"].replace(":", "") + "00"
@@ -54,9 +60,12 @@ def generate_ics(services, session):
     ics_lines.append("END:VCALENDAR")
     return "\n".join(ics_lines)
 
+
+# ── Login ─────────────────────────────────────────────────────────────────────
 def get_current_month_year():
     now = datetime.now(timezone.utc)
     return now.strftime("%m"), now.strftime("%Y")
+
 
 def get_hidden_fields(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
@@ -66,16 +75,17 @@ def get_hidden_fields(html: str) -> dict:
         if inp.get("name")
     }
 
+
 def login(session: requests.Session):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         "Origin": "https://fahrerauskunft.rnv-online.de",
         "Referer": LOGIN_URL,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded",
     }
-    session.get(START_URL, headers=headers)
-    r = session.get(LOGIN_URL, headers=headers)
+    session.get(START_URL, headers=headers, timeout=20)
+    r = session.get(LOGIN_URL, headers=headers, timeout=20)
     hidden = get_hidden_fields(r.text)
 
     payload = {
@@ -85,71 +95,49 @@ def login(session: requests.Session):
         "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
     }
 
-    r2 = session.post(LOGIN_URL, data=payload, headers=headers)
+    r2 = session.post(LOGIN_URL, data=payload, headers=headers, timeout=20)
     if r2.status_code == 500:
         raise Exception("Serverfehler 500: RNV blockiert die Anfrage.")
     if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
         raise Exception("Login fehlgeschlagen.")
 
-def create_calendar_link(service, info, date_str=None):
-    try:
-        if date_str is None:
-            date_str = "2026-05-29"
 
-        start_time = info["start_time"]
-        end_time = info["end_time"]
-        if not start_time or not end_time or start_time == "-" or end_time == "-":
-            return "https://google.com"
+def login_with_retry(session, attempts=3):
+    for i in range(1, attempts + 1):
+        try:
+            login(session)
+            return
+        except Exception as e:
+            print(f"Login Versuch {i}/{attempts}: {e}")
+            if i == attempts:
+                raise
+            time_mod.sleep(10)
 
-        start_compact = start_time.replace(":", "") + "00"
-        end_compact = end_time.replace(":", "") + "00"
-        date_compact = date_str.replace("-", "")
-        title = f"Straßenbahn Dienst {service['id']} ({MEIN_NAME})"
 
-        params = {
-            "text": title,
-            "dates": f"{date_compact}T{start_compact}/{date_compact}T{end_compact}",
-            "details": info["text"],
-            "location": "RNV"
-        }
-        return f"https://www.google.com/calendar/render?action=TEMPLATE&{urllib.parse.urlencode(params)}"
-    except Exception as ex:
-        print(f"Warnung: Kalenderlink konnte nicht erstellt werden: {ex}")
-        return "https://google.com"
-
+# ── Dienstdetails ─────────────────────────────────────────────────────────────
 def get_service_details(session, date_str, service_id):
-    session.get(ROSTER_URL)
+    session.get(ROSTER_URL, timeout=20)
 
     payload = {
         "__EVENTTARGET": "ctl00$cntMainBody$calRoster",
-        "__EVENTARGUMENT": date_str
+        "__EVENTARGUMENT": date_str,
     }
-    session.post(ROSTER_URL, data=payload)
+    session.post(ROSTER_URL, data=payload, timeout=20)
 
-    resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}")
+    resp = session.get(f"{BASE_URL}/shift.aspx?{date_str}", timeout=20)
     soup = BeautifulSoup(resp.text, "html.parser")
     table = soup.find("table", {"id": "ctl00_cntMainBody_lstDienstinfo"})
 
+    empty = {"start_time": None, "end_time": None, "start_ort": None, "end_ort": None}
+
     if not table:
-        return {
-            "text": "Details nicht verfügbar.",
-            "start_time": None,
-            "end_time": None,
-            "start_ort": None,
-            "end_ort": None
-        }
+        return {"text": "Details nicht verfügbar.", **empty}
 
     rows = [r for r in table.find_all("tr") if len(r.find_all("td")) > 5]
     dienst_rows = [r for r in rows if r.find_all("td")[0].text.strip() == service_id]
 
     if not dienst_rows:
-        return {
-            "text": "Keine Dienstdetails gefunden.",
-            "start_time": None,
-            "end_time": None,
-            "start_ort": None,
-            "end_ort": None
-        }
+        return {"text": "Keine Dienstdetails gefunden.", **empty}
 
     def clean_ort(ort: str, typ: str) -> str:
         ort = (ort or "").strip()
@@ -200,20 +188,23 @@ def get_service_details(session, date_str, service_id):
         "start_time": start_time,
         "end_time": end_time,
         "start_ort": start_ort,
-        "end_ort": end_ort
+        "end_ort": end_ort,
     }
 
+
+# ── Kalender parsen ───────────────────────────────────────────────────────────
 def parse_services(html, month, year):
+    """Gibt None zurück, wenn der Kalender nicht gefunden wurde (= Abruf fehlgeschlagen)."""
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id=lambda x: x and "calRoster" in x)
     if not table:
-        return []
+        return None
 
     services = []
     for td in table.find_all("td", {"class": "calDay"}):
         title = td.get("title", "")
         if "Dienst:" in title and "abwesend" not in title:
-            day_str = td.find("strong").get_text(strip=True)[:2]
+            day_str = td.find("strong").get_text(strip=True)[:2].strip().zfill(2)
             span = td.find("span")
             time_val = span.get_text(strip=True) if span else ""
 
@@ -222,33 +213,72 @@ def parse_services(html, month, year):
                 "time": time_val,
                 "id": title.split("Dienst:")[1].split("•")[0].strip(),
                 "month": month,
-                "year": year
+                "year": year,
             })
     return services
 
+
+# ── Vergleich: pro TAG, nicht pro Dienstnummer ────────────────────────────────
+def day_key(s) -> str:
+    return f"{s['year']}-{str(s['month']).zfill(2)}-{str(s['day']).zfill(2)}"
+
+
+def group_by_day(items) -> dict:
+    result = {}
+    for s in items:
+        result.setdefault(day_key(s), []).append(s)
+    return result
+
+
+def signature(items):
+    return sorted((i["id"], i["time"]) for i in items)
+
+
+def zeit_only(item) -> str:
+    """Im Kalender steht 'Dienstnr  HH:MM - HH:MM' -> nur die Zeit."""
+    return item["time"].replace(item["id"], "").strip()
+
+
+def fmt_items(items) -> str:
+    return " + ".join(f"{i['id']} ({zeit_only(i)})" for i in items)
+
+
+# ── ntfy ──────────────────────────────────────────────────────────────────────
+def ntfy(topic, title, msg, extra=None):
+    if not topic:
+        return
+    headers = {"Title": title}
+    if extra:
+        headers.update(extra)
+    try:
+        r = requests.post(
+            f"https://ntfy.sh/{topic}",
+            data=msg.encode("utf-8"),
+            headers=headers,
+            timeout=10,
+        )
+        print(f"ntfy '{title}': {r.status_code}")
+    except Exception as e:
+        print(f"ntfy-Fehler: {e}")
+
+
+def push_both(msg_self, msg_mama):
+    ntfy(NTFY_TOPIC, "Perdis", msg_self, {"Actions": ACTIONS_SELF})
+    ntfy(NTFY_TOPIC_MAMA, "Dienstplan Samet RNV", msg_mama, {"Icon": MAMA_ICON})
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     now = datetime.now(timezone.utc)
     if not (6 <= now.hour < 17):
         print("Außerhalb der Zeit. Skript pausiert.")
         return
 
+    today = now.date()
     session = requests.Session()
+
     try:
-        login(session)
-
-        all_services = []
-        html_curr = session.get(ROSTER_URL).text
-        month, year = get_current_month_year()
-        all_services.extend(parse_services(html_curr, month, year))
-
-        heute = datetime.now(timezone.utc)
-        naechster_monat = (heute.replace(day=28) + timedelta(days=5)).replace(day=28)
-        html_next = session.get(f"{ROSTER_URL}?{naechster_monat.strftime('%Y-%m-%d')}").text
-        all_services.extend(parse_services(html_next, naechster_monat.strftime("%m"), naechster_monat.strftime("%Y")))
-
-        unique_services = {f"{s['year']}-{s['month']}-{s['day']}-{s['id']}": s for s in all_services}.values()
-        current = list(unique_services)
-
+        # Alten Checkpoint laden
         old = []
         if os.path.exists(CHECKPOINT_FILE):
             try:
@@ -258,108 +288,107 @@ def main():
                 print("Warnung: Checkpoint-Datei war korrupt, erstelle neue Liste.")
                 old = []
 
-        old_dict = {f"{i['year']}-{i['month']}-{i['day']}-{i['id']}": i for i in old}
-        current_dict = {f"{i['year']}-{i['month']}-{i['day']}-{i['id']}": i for i in current}
+        login_with_retry(session)
 
-        today = datetime.now(timezone.utc).date()
+        # Aktueller Monat (Pflicht)
+        month, year = get_current_month_year()
+        curr = parse_services(session.get(ROSTER_URL, timeout=20).text, month, year)
+        if curr is None:
+            raise RuntimeError("Kalender (aktueller Monat) nicht gefunden - Abruf fehlgeschlagen.")
 
-        for item_id, item in current_dict.items():
-            service_date_obj = datetime(int(item['year']), int(item['month']), int(item['day'])).date()
-            if service_date_obj < today:
-                print(f"Vergangener Eintrag übersprungen: {item['id']} am {service_date_obj}")
+        # Nächster Monat (optional: bei Fehler alte Einträge behalten)
+        naechster = (now.replace(day=28) + timedelta(days=5)).replace(day=28)
+        n_month, n_year = naechster.strftime("%m"), naechster.strftime("%Y")
+        nxt = parse_services(
+            session.get(f"{ROSTER_URL}?{naechster.strftime('%Y-%m-%d')}", timeout=20).text,
+            n_month, n_year,
+        )
+        if nxt is None:
+            print("Warnung: Kalender (nächster Monat) nicht gefunden, übernehme alte Einträge.")
+            nxt = [s for s in old if s.get("month") == n_month and s.get("year") == n_year]
+
+        unique = {f"{s['year']}-{s['month']}-{s['day']}-{s['id']}": s for s in curr + nxt}
+        current = list(unique.values())
+
+        old_by_day = group_by_day(old)
+        cur_by_day = group_by_day(current)
+
+        # Neu / geändert
+        for key in sorted(cur_by_day):
+            d = date.fromisoformat(key)
+            if d < today:
                 continue
 
-            service_date = f"{item['year']}-{item['month']}-{item['day']}"
-            date_obj = datetime(int(item['year']), int(item['month']), int(item['day']))
-            wochentag = WOCHENTAG[date_obj.weekday()]
-            info = get_service_details(session, service_date, item['id'])
+            new_items = cur_by_day[key]
+            old_items = old_by_day.get(key)
+            wt = WOCHENTAG[d.weekday()]
+            datum = f"{d.day:02d}.{d.month:02d}.{d.year}"
 
-            if item_id not in old_dict:
-                msg = (
-                    f"Neuer Dienst {item['id']}\n"
-                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
-                    f"⏰ Zeit: {item['time']}\n"
-                    f"🆔 Dienstnummer: {item['id']}\n\n"
-                )
-                requests.post(
-                    f"https://ntfy.sh/{NTFY_TOPIC}",
-                    data=msg.encode("utf-8"),
-                    headers={
-                        "Title": "Perdis",
-                        "Actions": "view, In Notizen speichern, shortcuts://run-shortcut?name=DienstplanSpeichern",
-                    }
+            if old_items is None:
+                print(f"NEU: {key} {fmt_items(new_items)}")
+                push_both(
+                    f"Neuer Dienst\n"
+                    f"📅 {wt}, {datum}\n"
+                    f"⏰ {fmt_items(new_items)}\n\n",
+                    f"📅 Wann: {wt}, {datum}\n"
+                    f"⏰ Zeit: {fmt_items(new_items)}\n\n"
+                    f"*Samets Dienstplan wurde aktualisiert.*",
                 )
 
-                msg_mama = (
-                    f"📅 Wann: {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
-                    f"⏰ Zeit: {item['time']}\n\n"
-                    f"*Samets Dienstplan wurde aktualisiert.*"
-                )
-
-                print("NTFY_TOPIC_MAMA =", repr(NTFY_TOPIC_MAMA))
-                resp = requests.post(
-                    f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
-                    data=msg_mama.encode("utf-8"),
-                    headers={
-                        "Title": "Dienstplan Samet RNV",
-                        "Icon": "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios57x57.png"
-                    },
-                    timeout=10
-                )
-                print("ntfy status:", resp.status_code)
-                print("ntfy body:", resp.text[:300])
-
-            elif old_dict[item_id] != item:
-                msg = (
-                    f"🔔 Dienstplanänderung {item['id']}\n"
-                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
-                    f"⏰ Neue Zeit: {item['time']}\n"
-                    f"🆔 Dienstnummer: {item['id']}\n\n"
-                )
-                requests.post(
-                    f"https://ntfy.sh/{NTFY_TOPIC}",
-                    data=msg.encode("utf-8"),
-                    headers={
-                        "Title": "Perdis",
-                        "Actions": "view, In Notizen speichern, shortcuts://run-shortcut?name=DienstplanSpeichern",
-                    }
-                )
-
-                msg_mama = (
+            elif signature(old_items) != signature(new_items):
+                print(f"GEÄNDERT: {key} {fmt_items(old_items)} -> {fmt_items(new_items)}")
+                push_both(
+                    f"🔔 Dienstplanänderung\n"
+                    f"📅 {wt}, {datum}\n"
+                    f"⏰ Vorher: {fmt_items(old_items)}\n"
+                    f"⏰ Jetzt: {fmt_items(new_items)}\n\n",
                     f"⚠️ Samets Dienst hat sich geändert\n"
-                    f"📅 {wochentag}, {item['day']}.{item['month']}.{item['year']}\n"
-                    f"⏰ Neue Zeit: {item['time']}\n\n"
-                    f"*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*"
+                    f"📅 {wt}, {datum}\n"
+                    f"⏰ Neue Zeit: {fmt_items(new_items)}\n\n"
+                    f"*Der Dienstplan wurde angepasst. Bitte den Kalender prüfen.*",
                 )
-                resp = requests.post(
-                    f"https://ntfy.sh/{NTFY_TOPIC_MAMA}",
-                    data=msg_mama.encode("utf-8"),
-                    headers={
-                        "Title": "Dienstplan Samet RNV",
-                        "Icon": "https://fahrerauskunft.rnv-online.de/WebComm/images/icons/ios57x57.png"
-                    },
-                    timeout=10
-                )
-                print("ntfy status:", resp.status_code)
-                print("ntfy body:", resp.text[:300])
 
-        valid_services = []
-        for item in current:
-            d = datetime(int(item['year']), int(item['month']), int(item['day'])).date()
-            if d >= today:
-                valid_services.append(item)
+        # Entfernt
+        for key in sorted(old_by_day):
+            if key in cur_by_day:
+                continue
+            d = date.fromisoformat(key)
+            if d < today:
+                continue
 
-        ics_data = generate_ics(valid_services, session)
-        with open(ICS_FILE, "w", encoding="utf-8") as f:
-            f.write(ics_data)
-        print("ICS-Datei aktualisiert.")
+            wt = WOCHENTAG[d.weekday()]
+            datum = f"{d.day:02d}.{d.month:02d}.{d.year}"
+            print(f"ENTFERNT: {key} {fmt_items(old_by_day[key])}")
+            push_both(
+                f"❌ Dienst entfernt\n"
+                f"📅 {wt}, {datum}\n"
+                f"⏰ Vorher: {fmt_items(old_by_day[key])}\n\n",
+                f"⚠️ Samets Dienst am {wt}, {datum} wurde entfernt.\n\n"
+                f"*Bitte den Kalender prüfen.*",
+            )
 
+        # Checkpoint ZUERST speichern (verhindert Doppel-Pushes)
         with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
             json.dump(current, f, indent=2, ensure_ascii=False)
         print("Checkpoint gespeichert.")
 
+        # ICS danach; Fehler hier dürfen den Checkpoint nicht verhindern
+        try:
+            valid_services = [
+                s for s in current
+                if date(int(s["year"]), int(s["month"]), int(s["day"])) >= today
+            ]
+            ics_data = generate_ics(valid_services, session)
+            with open(ICS_FILE, "w", encoding="utf-8") as f:
+                f.write(ics_data)
+            print("ICS-Datei aktualisiert.")
+        except Exception as e:
+            print(f"Warnung: ICS-Erzeugung fehlgeschlagen: {e}")
+
     except Exception as e:
         print(f"KRITISCHER FEHLER: {e}")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
