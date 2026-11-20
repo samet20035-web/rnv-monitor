@@ -24,10 +24,13 @@ Logik:
   - Nur Dienste in der Zukunft (ab heute) werden verarbeitet
   - Jede separate .txt-Datei pro Dienst im Ordner "dienste/"
   - Push nur bei NEUEM oder GEÄNDERTEM Inhalt (verhindert Mehrfach-Pushs)
+  - Datei wird erst NACH erfolgreichem Push gespeichert (sonst ginge ein
+    fehlgeschlagener Push dauerhaft verloren)
 """
 
 import os
-import re
+import sys
+import glob
 import json
 import urllib.parse
 import requests
@@ -53,7 +56,8 @@ ICLOUD_NOTES_URL = os.getenv(
     "https://www.icloud.com/notes/05dCvnyOenXtYy9Rkdt2T6w7w",
 )
 NOTES_SHORTCUT_NAME = os.getenv("NOTES_SHORTCUT_NAME", "DienstplanSpeichern")
-MAX_SHORTCUT_TEXT_CHARS = int(os.getenv("MAX_SHORTCUT_TEXT_CHARS", "6000"))
+# Der Text steckt URL-kodiert im Actions-Header -> klein halten (Header-Limit!)
+MAX_SHORTCUT_TEXT_CHARS = int(os.getenv("MAX_SHORTCUT_TEXT_CHARS", "1200"))
 OUTPUT_DIR      = os.path.join(BASE_PATH, "dienste")   # ← ein Ordner, viele Dateien
 
 WOCHENTAG_KURZ = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
@@ -88,6 +92,7 @@ STOPS = {
     "Kirchheimer Straße":           "EHKS",
     "Heiligenberg":                 "HHBG",
     "Heiligenbergstraße":           "HHHB",
+    "Burgstraße":                   "HHBS",
     "Johann-Fischer-Str.":          "HHJF",
     "Tiefburg":                     "HHTG",
     "Turnerbrunnen":                "HHTB",
@@ -179,8 +184,8 @@ def login(session: requests.Session):
         "Accept":       "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Content-Type": "application/x-www-form-urlencoded",
     }
-    session.get(START_URL, headers=headers)
-    r = session.get(LOGIN_URL, headers=headers)
+    session.get(START_URL, headers=headers, timeout=20)
+    r = session.get(LOGIN_URL, headers=headers, timeout=20)
     hidden = get_hidden_fields(r.text)
     payload = {
         **hidden,
@@ -188,7 +193,7 @@ def login(session: requests.Session):
         "ctl00$cntMainBody$lgnView$lgnLogin$UserName": USERNAME,
         "ctl00$cntMainBody$lgnView$lgnLogin$Password": PASSWORD,
     }
-    r2 = session.post(LOGIN_URL, data=payload, headers=headers)
+    r2 = session.post(LOGIN_URL, data=payload, headers=headers, timeout=20)
     if r2.status_code == 500:
         raise RuntimeError("Serverfehler 500")
     if not any(x in r2.text.lower() for x in ["logout", "abmelden", "dienstplan"]):
@@ -345,6 +350,42 @@ def build_ntfy_actions(title: str, body: str, filename: str) -> str:
     return "; ".join(actions)
 
 
+def send_push(title: str, body: str, filename: str, attempts: int = 3) -> bool:
+    """
+    Sendet die Übersicht an ntfy und prüft den HTTP-Status.
+    Versuch 1-2 mit Action-Buttons, letzter Versuch ohne Actions
+    (falls ntfy die Header ablehnt, kommt die Nachricht trotzdem an).
+    True = zugestellt.
+    """
+    for i in range(1, attempts + 1):
+        headers = {
+            "Title":    title,
+            "Tags":     "calendar",
+            "Priority": "default",
+        }
+        if i < attempts:
+            headers["Actions"] = build_ntfy_actions(title, body, filename)
+
+        try:
+            r = requests.post(
+                f"https://ntfy.sh/{NTFY_TOPIC}",
+                data=body.encode("utf-8"),
+                headers=headers,
+                timeout=10,
+            )
+            if r.status_code == 200:
+                print(f"ntfy OK (Versuch {i})", end=" ")
+                return True
+            print(f"\n     ntfy HTTP {r.status_code} (Versuch {i}): {r.text[:200]}")
+        except Exception as err:
+            print(f"\n     ntfy-Fehler (Versuch {i}): {err}")
+
+        if i < attempts:
+            time_mod.sleep(5 * i)
+
+    return False
+
+
 # ── Hauptprogramm ──────────────────────────────────────────────────────────────
 def main():
     # 1. checkpoint.json lesen (von monitor.py geschrieben, hier nur gelesen)
@@ -396,15 +437,17 @@ def main():
             login(session)
             print("✅ Login erfolgreich")
             break
-        except RuntimeError as e:
+        except Exception as e:
             print(f"⚠️  Login Versuch {attempt}/3: {e}")
             if attempt < 3:
                 time_mod.sleep(5)
     else:
         print("❌ Login endgültig fehlgeschlagen")
-        return
+        sys.exit(1)
 
-    # 3. Pro Dienst: HTML holen, parsen, nur bei Änderung schreiben & pushen
+    fehler = 0
+
+    # 3. Pro Dienst: HTML holen, parsen, nur bei Änderung pushen + schreiben
     for d in dienste_zukunft:
         date_str  = f"{d['year']}-{d['month'].zfill(2)}-{d['day'].zfill(2)}"
         dienst_id = d["id"]
@@ -412,11 +455,13 @@ def main():
         print(f"  📋 {date_str}  Dienst {dienst_id} …", end=" ", flush=True)
 
         try:
-            # Calendar-Navigation simulieren (wie monitor.py)
+            # Calendar-Navigation simulieren (exakt wie in monitor.py:
+            # erst Roster laden, dann Tag per Postback wählen)
+            session.get(ROSTER_URL, timeout=15)
             session.post(ROSTER_URL, data={
                 "__EVENTTARGET":   "ctl00$cntMainBody$calRoster",
                 "__EVENTARGUMENT": date_str,
-            })
+            }, timeout=15)
             html = session.get(
                 f"{BASE_URL}/shift.aspx?{date_str}", timeout=15
             ).text
@@ -425,6 +470,7 @@ def main():
 
             if not umlaeufe:
                 print("⚠️  keine Umläufe gefunden")
+                fehler += 1
                 continue
 
             year, month, day = date_str.split("-")
@@ -434,7 +480,7 @@ def main():
             dateiname = f"{date_str}_{dienst_id}.txt"
             pfad      = os.path.join(OUTPUT_DIR, dateiname)
 
-            # ── Change-Detection: nur bei neuem/geändertem Inhalt schreiben+pushen ──
+            # ── Change-Detection ──
             alter_inhalt = None
             if os.path.exists(pfad):
                 with open(pfad, "r", encoding="utf-8") as f:
@@ -444,34 +490,38 @@ def main():
                 print("↔️  unverändert, kein Push")
                 continue
 
+            # ── ERST pushen, DANN speichern ──
+            # Schlägt der Push fehl, wird die Datei nicht geschrieben →
+            # der nächste Lauf erkennt den Dienst wieder als neu/geändert.
+            if NTFY_TOPIC:
+                note_title = f"Dienst {dienst_id} - {datum}"
+                if not send_push(note_title, inhalt, dateiname):
+                    print("❌  Push fehlgeschlagen – wird beim nächsten Lauf wiederholt")
+                    fehler += 1
+                    continue
+            else:
+                print("(kein NTFY_TOPIC gesetzt)", end=" ")
+
+            # Alte Dateien desselben Tages mit anderer Dienstnummer entfernen
+            for alt in glob.glob(os.path.join(OUTPUT_DIR, f"{date_str}_*.txt")):
+                if os.path.basename(alt) != dateiname:
+                    os.remove(alt)
+                    print(f"(alte Datei {os.path.basename(alt)} entfernt)", end=" ")
+
             with open(pfad, "w", encoding="utf-8") as f:
                 f.write(inhalt)
-
-            # Push-Benachrichtigung (nur bei neuem/geändertem Inhalt)
-            if NTFY_TOPIC:
-                try:
-                    note_title = f"Dienst {dienst_id} - {datum}"
-                    requests.post(
-                        f"https://ntfy.sh/{NTFY_TOPIC}",
-                        data=inhalt.encode("utf-8"),
-                        headers={
-                            "Title":    note_title,
-                            "Tags":     "calendar",
-                            "Priority": "default",
-                            "Actions":  build_ntfy_actions(note_title, inhalt, dateiname),
-                        },
-                        timeout=10,
-                    )
-                except Exception as ntfy_err:
-                    print(f"⚠️  ntfy-Fehler: {ntfy_err}")
 
             status = "🆕 neu" if alter_inhalt is None else "🔄 geändert"
             print(f"✅  {status}, {len(umlaeufe)} Umläufe → {dateiname}")
 
         except Exception as e:
             print(f"❌  Fehler: {e}")
+            fehler += 1
 
-    print(f"\n✅ Fertig. Dateien liegen in: {OUTPUT_DIR}/")
+    print(f"\nFertig. Dateien liegen in: {OUTPUT_DIR}/")
+    if fehler:
+        print(f"⚠️  {fehler} Fehler aufgetreten.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
