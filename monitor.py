@@ -244,27 +244,42 @@ def fmt_items(items) -> str:
 
 
 # ── ntfy ──────────────────────────────────────────────────────────────────────
-def ntfy(topic, title, msg, extra=None):
+def ntfy(topic, title, msg, extra=None, attempts=3):
+    """Sendet an ntfy, prüft den Status und versucht es mehrfach. True = zugestellt."""
     if not topic:
-        return
+        return True
     headers = {"Title": title}
     if extra:
         headers.update(extra)
-    try:
-        r = requests.post(
-            f"https://ntfy.sh/{topic}",
-            data=msg.encode("utf-8"),
-            headers=headers,
-            timeout=10,
-        )
-        print(f"ntfy '{title}': {r.status_code}")
-    except Exception as e:
-        print(f"ntfy-Fehler: {e}")
+    for i in range(1, attempts + 1):
+        try:
+            r = requests.post(
+                f"https://ntfy.sh/{topic}",
+                data=msg.encode("utf-8"),
+                headers=headers,
+                timeout=10,
+            )
+            if r.status_code == 200:
+                print(f"ntfy '{title}': OK")
+                return True
+            print(f"ntfy '{title}': HTTP {r.status_code} {r.text[:200]}")
+        except Exception as e:
+            print(f"ntfy-Fehler ({i}/{attempts}): {e}")
+        if i < attempts:
+            time_mod.sleep(5 * i)
+    return False
 
 
-def push_both(msg_self, msg_mama):
-    ntfy(NTFY_TOPIC, "Perdis", msg_self, {"Actions": ACTIONS_SELF})
+# Tage, bei denen der Push NICHT zugestellt wurde -> bleiben im Checkpoint "alt",
+# damit der nächste Lauf es erneut versucht
+FAILED_DAYS = set()
+
+
+def push_both(key, msg_self, msg_mama):
+    ok = ntfy(NTFY_TOPIC, "Perdis", msg_self, {"Actions": ACTIONS_SELF})
     ntfy(NTFY_TOPIC_MAMA, "Dienstplan Samet RNV", msg_mama, {"Icon": MAMA_ICON})
+    if not ok:
+        FAILED_DAYS.add(key)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -327,6 +342,7 @@ def main():
             if old_items is None:
                 print(f"NEU: {key} {fmt_items(new_items)}")
                 push_both(
+                    key,
                     f"Neuer Dienst\n"
                     f"📅 {wt}, {datum}\n"
                     f"⏰ {fmt_items(new_items)}\n\n",
@@ -338,6 +354,7 @@ def main():
             elif signature(old_items) != signature(new_items):
                 print(f"GEÄNDERT: {key} {fmt_items(old_items)} -> {fmt_items(new_items)}")
                 push_both(
+                    key,
                     f"🔔 Dienstplanänderung\n"
                     f"📅 {wt}, {datum}\n"
                     f"⏰ Vorher: {fmt_items(old_items)}\n"
@@ -360,6 +377,7 @@ def main():
             datum = f"{d.day:02d}.{d.month:02d}.{d.year}"
             print(f"ENTFERNT: {key} {fmt_items(old_by_day[key])}")
             push_both(
+                key,
                 f"❌ Dienst entfernt\n"
                 f"📅 {wt}, {datum}\n"
                 f"⏰ Vorher: {fmt_items(old_by_day[key])}\n\n",
@@ -367,9 +385,14 @@ def main():
                 f"*Bitte den Kalender prüfen.*",
             )
 
-        # Checkpoint ZUERST speichern (verhindert Doppel-Pushes)
+        # Checkpoint ZUERST speichern (verhindert Doppel-Pushes).
+        # Tage mit fehlgeschlagenem Push behalten den alten Stand -> nächster Lauf sendet erneut.
+        to_save = [s for s in current if day_key(s) not in FAILED_DAYS]
+        to_save += [s for s in old if day_key(s) in FAILED_DAYS]
+        if FAILED_DAYS:
+            print(f"Warnung: Push fehlgeschlagen für {sorted(FAILED_DAYS)} - wird beim nächsten Lauf wiederholt.")
         with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
-            json.dump(current, f, indent=2, ensure_ascii=False)
+            json.dump(to_save, f, indent=2, ensure_ascii=False)
         print("Checkpoint gespeichert.")
 
         # ICS danach; Fehler hier dürfen den Checkpoint nicht verhindern
