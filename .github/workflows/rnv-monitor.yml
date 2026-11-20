@@ -3,12 +3,17 @@ name: RNV Dienstplan Monitor
 on:
   workflow_dispatch:
   schedule:
-    # 08:00 bis 17:59 Uhr alle 15 Minuten
-    - cron: "*/15 6-17 * * *"
+    # UTC 06:00-16:59 (= 07:00-17:59 Berlin im Winter), bewusst "krumme" Minuten
+    - cron: "7,22,37,52 6-16 * * *"
+
+concurrency:
+  group: rnv-monitor
+  cancel-in-progress: false
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
 
@@ -27,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4
 
-      - name: Sync remote
+      - name: Git konfigurieren
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -39,8 +44,7 @@ jobs:
           RNV_PASS: ${{ secrets.RNV_PASS }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           NTFY_TOPIC_MAMA: ${{ secrets.NTFY_TOPIC_MAMA }}
-        run: |
-          python monitor.py
+        run: python monitor.py
 
       - name: Run Dienst-Übersicht
         env:
@@ -50,20 +54,15 @@ jobs:
         run: python dienst_uebersicht.py
 
       - name: Commit changes
+        if: always()
         run: |
-          FILES_TO_ADD=""
-          if [ -f "checkpoint.json" ]; then FILES_TO_ADD="$FILES_TO_ADD checkpoint.json"; fi
-          if [ -f "dienstplan.ics" ]; then FILES_TO_ADD="$FILES_TO_ADD dienstplan.ics"; fi
-          if [ -d "dienste" ] && [ "$(ls -A dienste)" ]; then FILES_TO_ADD="$FILES_TO_ADD dienste/"; fi
-
-          if [ -n "$FILES_TO_ADD" ]; then
-            git add $FILES_TO_ADD
-            if ! git diff --cached --quiet; then
-              git commit -m "Update Dienstplan, Übersicht und Checkpoint"
-              git push
-            else
-              echo "Keine Änderungen zum Committen gefunden."
-            fi
+          git add checkpoint.json dienstplan.ics dienste/ 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Update Dienstplan, Übersicht und Checkpoint"
+            for i in 1 2 3; do
+              git pull --rebase origin main && git push && break
+              sleep 5
+            done
           else
-            echo "Keine Dateien zum Committen vorhanden."
+            echo "Keine Änderungen."
           fi
