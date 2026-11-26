@@ -51,6 +51,7 @@ MEIN_NAME  = "Samet"
 
 BASE_PATH       = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
+STATUS_FILE     = os.path.join(BASE_PATH, "status.json")
 ICLOUD_NOTES_URL = os.getenv(
     "ICLOUD_NOTES_URL",
     "https://www.icloud.com/notes/05dCvnyOenXtYy9Rkdt2T6w7w",
@@ -388,6 +389,15 @@ def send_push(title: str, body: str, filename: str, attempts: int = 3) -> bool:
 
 # ── Hauptprogramm ──────────────────────────────────────────────────────────────
 def main():
+    # 0. Ist RNV laut monitor.py gerade nicht erreichbar? Dann nicht erneut versuchen.
+    try:
+        with open(STATUS_FILE, "r", encoding="utf-8") as f:
+            if "down_since" in json.load(f):
+                print("ℹ️  RNV laut status.json nicht erreichbar – Übersicht übersprungen.")
+                return
+    except Exception:
+        pass
+
     # 1. checkpoint.json lesen (von monitor.py geschrieben, hier nur gelesen)
     if not os.path.exists(CHECKPOINT_FILE):
         print("❌ checkpoint.json nicht gefunden – monitor.py zuerst ausführen!")
