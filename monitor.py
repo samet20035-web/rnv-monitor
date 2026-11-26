@@ -20,6 +20,7 @@ MEIN_NAME = "Samet"
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 ICS_FILE = os.path.join(BASE_PATH, "dienstplan.ics")
+STATUS_FILE = os.path.join(BASE_PATH, "status.json")
 
 WOCHENTAG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
@@ -102,6 +103,10 @@ def login(session: requests.Session):
         raise Exception("Login fehlgeschlagen.")
 
 
+class SiteUnavailable(Exception):
+    """RNV-Seite nicht erreichbar bzw. Login nicht möglich."""
+
+
 def login_with_retry(session, attempts=3):
     for i in range(1, attempts + 1):
         try:
@@ -110,8 +115,59 @@ def login_with_retry(session, attempts=3):
         except Exception as e:
             print(f"Login Versuch {i}/{attempts}: {e}")
             if i == attempts:
-                raise
+                raise SiteUnavailable(str(e))
             time_mod.sleep(10)
+
+
+# ── Ausfall-Überwachung ───────────────────────────────────────────────────────
+# status.json wird nur bei Zustandswechseln geschrieben (Ausfall beginnt,
+# Push gesendet, Seite wieder da) -> kein Commit-Spam alle 15 Minuten.
+OUTAGE_NOTIFY_AFTER_MIN = 45
+
+
+def load_status() -> dict:
+    try:
+        with open(STATUS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_status(status: dict):
+    if status:
+        with open(STATUS_FILE, "w", encoding="utf-8") as f:
+            json.dump(status, f)
+    elif os.path.exists(STATUS_FILE):
+        os.remove(STATUS_FILE)
+
+
+def handle_outage(reason: str):
+    now = datetime.now(timezone.utc)
+    status = load_status()
+    if "down_since" not in status:
+        save_status({"down_since": now.isoformat(), "notified": False})
+        print("Ausfall erkannt, Beobachtung gestartet.")
+        return
+
+    minutes = int((now - datetime.fromisoformat(status["down_since"])).total_seconds() // 60)
+    print(f"RNV seit {minutes} Min nicht erreichbar.")
+    if not status.get("notified") and minutes >= OUTAGE_NOTIFY_AFTER_MIN:
+        msg = (
+            f"⚠️ RNV-Dienstplan seit {minutes} Min nicht erreichbar.\n"
+            f"Grund: {reason[:150]}\n\n"
+            f"Neue Dienste werden erst erkannt, wenn die Seite wieder geht."
+        )
+        if ntfy(NTFY_TOPIC, "Perdis", msg):
+            status["notified"] = True
+            save_status(status)
+
+
+def handle_recovery():
+    status = load_status()
+    if "down_since" in status:
+        if status.get("notified"):
+            ntfy(NTFY_TOPIC, "Perdis", "✅ RNV-Dienstplan ist wieder erreichbar.")
+        save_status({})
 
 
 # ── Dienstdetails ─────────────────────────────────────────────────────────────
@@ -309,7 +365,7 @@ def main():
         month, year = get_current_month_year()
         curr = parse_services(session.get(ROSTER_URL, timeout=20).text, month, year)
         if curr is None:
-            raise RuntimeError("Kalender (aktueller Monat) nicht gefunden - Abruf fehlgeschlagen.")
+            raise SiteUnavailable("Kalender (aktueller Monat) nicht gefunden - Abruf fehlgeschlagen.")
 
         # Nächster Monat (optional: bei Fehler alte Einträge behalten)
         naechster = (now.replace(day=28) + timedelta(days=5)).replace(day=28)
@@ -321,6 +377,9 @@ def main():
         if nxt is None:
             print("Warnung: Kalender (nächster Monat) nicht gefunden, übernehme alte Einträge.")
             nxt = [s for s in old if s.get("month") == n_month and s.get("year") == n_year]
+
+        # Seite hat geantwortet -> ggf. Ausfall-Status zurücksetzen
+        handle_recovery()
 
         unique = {f"{s['year']}-{s['month']}-{s['day']}-{s['id']}": s for s in curr + nxt}
         current = list(unique.values())
@@ -408,6 +467,10 @@ def main():
         except Exception as e:
             print(f"Warnung: ICS-Erzeugung fehlgeschlagen: {e}")
 
+    except (SiteUnavailable, requests.RequestException) as e:
+        # Seite down / blockiert: kein roter Lauf, aber Ausfall wird beobachtet und gemeldet
+        print(f"RNV nicht erreichbar: {e}")
+        handle_outage(str(e))
     except Exception as e:
         print(f"KRITISCHER FEHLER: {e}")
         sys.exit(1)
